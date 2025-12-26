@@ -1,0 +1,259 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold">
+        <i class="bi bi-clock-history me-2"></i>History Transaksi
+    </h3>
+    <div>
+        <a href="{{ url_for('admin') }}" class="btn btn-outline-primary me-2">
+            <i class="bi bi-arrow-left"></i> Kembali ke Admin
+        </a>
+        <button class="btn btn-success" onclick="exportToExcel()">
+            <i class="bi bi-file-excel"></i> Export Excel
+        </button>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card border-primary">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Hari Ini</h6>
+                <h4 class="card-title">{{ daily_summary.total_transactions if daily_summary and daily_summary.total_transactions else 0 }}</h4>
+                <p class="card-text small">Transaksi</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card border-success">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Pendapatan Hari Ini</h6>
+                <h4 class="card-title">Rp{{ "%.0f"|format(daily_summary.total_revenue) if daily_summary and daily_summary.total_revenue else 0 }}</h4>
+                <p class="card-text small">Total Revenue</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card border-info">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Biasa</h6>
+                <h4 class="card-title">{{ daily_summary.normal_count if daily_summary and daily_summary.normal_count else 0 }}</h4>
+                <p class="card-text small">Transaksi Normal</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card border-warning">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Lelang</h6>
+                <h4 class="card-title">{{ daily_summary.auction_count if daily_summary and daily_summary.auction_count else 0 }}</h4>
+                <p class="card-text small">Transaksi Lelang</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filter Section -->
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Filter Transaksi</h5>
+        <form method="GET" action="{{ url_for('admin_history') }}" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Tanggal Transaksi</label>
+                <input type="date" name="date" class="form-control" value="{{ date_filter }}">
+            </div>
+            <div class="col-md-8 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">
+                    <i class="bi bi-funnel"></i> Filter
+                </button>
+                <a href="{{ url_for('admin_history') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle"></i> Reset
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Transactions Table -->
+<div class="card">
+    <div class="card-header bg-dark text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-receipt me-2"></i>Daftar Transaksi
+            <span class="badge bg-light text-dark ms-2">{{ transactions|length }} transaksi</span>
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if transactions and transactions|length > 0 %}
+        <div class="table-responsive">
+            <table class="table table-hover" id="transactionTable">
+                <thead>
+                    <tr>
+                        <th>ID Transaksi</th>
+                        <th>Tanggal</th>
+                        <th>Kasir</th>
+                        <th>Jenis</th>
+                        <th>Jumlah Item</th>
+                        <th>Total</th>
+                        <th>Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trx in transactions %}
+                    <tr>
+                        <td>
+                            <span class="badge bg-secondary">{{ trx.transaction_id }}</span>
+                        </td>
+                        <td>{{ trx.transaction_date.strftime('%d/%m/%Y %H:%M') if trx.transaction_date else '' }}</td>
+                        <td>{{ trx.username }}</td>
+                        <td>
+                            {% if trx.transaction_type == 'biasa' %}
+                            <span class="badge bg-info">Biasa</span>
+                            {% else %}
+                            <span class="badge bg-warning">Lelang</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ trx.items_count }} item</td>
+                        <td class="fw-bold">Rp{{ "%.0f"|format(trx.total_amount) if trx.total_amount else 0 }}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" 
+                                    onclick="showTransactionDetail('{{ trx.id }}')">
+                                <i class="bi bi-eye"></i> Detail
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-receipt-cutoff fs-1 text-muted d-block mb-3"></i>
+            <h5 class="text-muted">Belum ada transaksi</h5>
+            <p class="text-muted">Transaksi akan muncul di sini setelah terjadi penjualan</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal for Transaction Detail -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Detail Transaksi</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="transactionDetailContent">
+                Loading...
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Show transaction details in modal
+async function showTransactionDetail(transactionId) {
+    try {
+        const response = await fetch(`/api/transaction/${transactionId}`);
+        const data = await response.json();
+        
+        let html = `
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong>ID Transaksi:</strong> ${data.transaction_id}</p>
+                    <p><strong>Tanggal:</strong> ${new Date(data.transaction_date).toLocaleString()}</p>
+                    <p><strong>Kasir:</strong> ${data.username}</p>
+                </div>
+                <div class="col-md-6">
+                    <p><strong>Jenis:</strong> 
+                        <span class="badge ${data.transaction_type === 'biasa' ? 'bg-info' : 'bg-warning'}">
+                            ${data.transaction_type.toUpperCase()}
+                        </span>
+                    </p>
+                    <p><strong>Metode Bayar:</strong> ${data.payment_method || 'Cash'}</p>
+                    <p><strong>Total Item:</strong> ${data.items_count}</p>
+                </div>
+            </div>
+            
+            <hr>
+            <h6 class="fw-bold mb-3">Detail Barang:</h6>
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Nama Barang</th>
+                            <th>Qty</th>
+                            <th>Harga Satuan</th>
+                            <th>Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+        
+        // Parse details JSON
+        try {
+            const items = JSON.parse(data.details);
+            items.forEach(item => {
+                html += `
+                    <tr>
+                        <td>${item.sku || item.no_SKU || 'N/A'}</td>
+                        <td>${item.name || item.Name_product || 'N/A'}</td>
+                        <td>${item.qty || 1}</td>
+                        <td>Rp${parseInt(item.price || item.Price || 0).toLocaleString()}</td>
+                        <td class="fw-bold">Rp${parseInt(item.subtotal || item.Price * (item.qty || 1) || 0).toLocaleString()}</td>
+                    </tr>`;
+            });
+        } catch (e) {
+            html += `<tr><td colspan="5" class="text-center">Data detail tidak dapat ditampilkan</td></tr>`;
+        }
+        
+        html += `
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-primary">
+                            <td colspan="4" class="text-end fw-bold">TOTAL:</td>
+                            <td class="fw-bold">Rp${parseInt(data.total_amount || 0).toLocaleString()}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>`;
+        
+        document.getElementById('transactionDetailContent').innerHTML = html;
+        new bootstrap.Modal(document.getElementById('detailModal')).show();
+        
+    } catch (error) {
+        console.error('Error loading transaction detail:', error);
+        document.getElementById('transactionDetailContent').innerHTML = 
+            '<div class="alert alert-danger">Gagal memuat detail transaksi</div>';
+    }
+}
+
+// Export to Excel
+function exportToExcel() {
+    const table = document.getElementById('transactionTable');
+    if (!table) {
+        alert('Tidak ada data untuk diexport');
+        return;
+    }
+    
+    const html = table.outerHTML;
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `transaksi_${new Date().toISOString().split('T')[0]}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// Auto refresh every 30 seconds
+setInterval(() => {
+    if (!document.hidden) {
+        window.location.reload();
+    }
+}, 30000);
+</script>
+{% endblock %}

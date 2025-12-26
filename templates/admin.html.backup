@@ -1,0 +1,53 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold">Dashboard Admin</h3>
+    <span class="badge bg-primary fs-6">Mode Pengelola</span>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card p-4 h-100 border-start border-4 border-info">
+            <h5 class="fw-bold mb-4 text-info">Tambah Barang Baru</h5>
+            <form action="{{ url_for('admin_add') }}" method="POST">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted">NAMA PRODUK</label>
+                    <input type="text" name="name" class="form-control" required>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <label class="form-label small fw-bold text-muted">SKU (KODE)</label>
+                        <input type="text" name="sku" class="form-control" required>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small fw-bold text-muted">HARGA (Rp)</label>
+                        <input type="number" name="harga" class="form-control" required>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label small fw-bold text-muted">TANGGAL EXPIRED</label>
+                    <input type="date" name="expired_date" class="form-control" required>
+                </div>
+                <button type="submit" class="btn btn-info text-white w-100 fw-bold">SIMPAN DATA</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-4">
+        <div class="card p-4 h-100 border-start border-4 border-success">
+            <h5 class="fw-bold mb-4 text-success">Update Stok (Restock)</h5>
+            <form action="{{ url_for('admin_restock') }}" method="POST">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted">KODE SKU</label>
+                    <input type="text" name="sku" class="form-control" placeholder="Scan atau ketik SKU..." required>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label small fw-bold text-muted">JUMLAH BARANG MASUK</label>
+                    <input type="number" name="qty" class="form-control" required>
+                </div>
+                <button type="submit" class="btn btn-success text-white w-100 fw-bold">UPDATE STOK</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

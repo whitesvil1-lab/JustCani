@@ -1,0 +1,170 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold">Dashboard Admin</h3>
+    <div>
+        <a href="{{ url_for('admin_history') }}" class="btn btn-outline-dark me-2">
+            <i class="bi bi-clock-history"></i> History Transaksi
+        </a>
+        <span class="badge bg-primary fs-6">Mode Pengelola</span>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-4 mb-4">
+        <div class="card p-4 h-100 border-start border-4 border-info">
+            <h5 class="fw-bold mb-4 text-info">
+                <i class="bi bi-plus-circle me-2"></i>Tambah Barang Baru
+            </h5>
+            <form action="{{ url_for('admin_add') }}" method="POST">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted">NAMA PRODUK</label>
+                    <input type="text" name="name" class="form-control" required>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <label class="form-label small fw-bold text-muted">SKU (KODE)</label>
+                        <input type="text" name="sku" class="form-control" required>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small fw-bold text-muted">HARGA (Rp)</label>
+                        <input type="number" name="harga" class="form-control" required>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label small fw-bold text-muted">TANGGAL EXPIRED</label>
+                    <input type="date" name="expired_date" class="form-control" required>
+                </div>
+                <button type="submit" class="btn btn-info text-white w-100 fw-bold">
+                    <i class="bi bi-save me-2"></i>SIMPAN DATA
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-md-4 mb-4">
+        <div class="card p-4 h-100 border-start border-4 border-success">
+            <h5 class="fw-bold mb-4 text-success">
+                <i class="bi bi-box-arrow-in-up me-2"></i>Update Stok (Restock)
+            </h5>
+            <form action="{{ url_for('admin_restock') }}" method="POST">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted">KODE SKU</label>
+                    <input type="text" name="sku" class="form-control" placeholder="Scan atau ketik SKU..." required>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label small fw-bold text-muted">JUMLAH BARANG MASUK</label>
+                    <input type="number" name="qty" class="form-control" required>
+                </div>
+                <button type="submit" class="btn btn-success text-white w-100 fw-bold">
+                    <i class="bi bi-arrow-up-circle me-2"></i>UPDATE STOK
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-md-4 mb-4">
+        <div class="card p-4 h-100 border-start border-4 border-warning">
+            <h5 class="fw-bold mb-4 text-warning">
+                <i class="bi bi-tag me-2"></i>Pindah ke Lelang
+            </h5>
+            <form action="{{ url_for('admin_move_lelang') }}" method="POST">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted">SKU PRODUK</label>
+                    <input type="text" name="sku" class="form-control" placeholder="Masukkan SKU..." required>
+                    <small class="text-muted">Produk akan dipindah ke lelang dengan diskon 50%</small>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label small fw-bold text-muted">ALASAN PINDAH</label>
+                    <select name="reason" class="form-control" required>
+                        <option value="">Pilih alasan...</option>
+                        <option value="Rusak Kemasan">Rusak Kemasan</option>
+                        <option value="Mendekati Expired">Mendekati Expired</option>
+                        <option value="Diskon Khusus">Diskon Khusus</option>
+                        <option value="Barang Lama">Barang Lama/Stagnan</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-warning text-white w-100 fw-bold">
+                    <i class="bi bi-arrow-right-circle me-2"></i>PINDAH KE LELANG (DISKON 50%)
+                </button>
+                <div class="alert alert-warning mt-3 small">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Perhatian:</strong> Produk akan otomatis didiskon 50% dan tidak bisa kembali.
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header bg-warning text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-tags me-2"></i>Daftar Produk Lelang Aktif
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover" id="lelangTable">
+                <thead>
+                    <tr>
+                        <th>SKU</th>
+                        <th>Nama Produk</th>
+                        <th>Harga Lelang</th>
+                        <th>Expired Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="4" class="text-center text-muted py-5">
+                            <i class="bi bi-hourglass-split fs-4 d-block mb-2"></i>
+                            Loading data produk lelang...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+async function loadProdukLelang() {
+    try {
+        const response = await fetch('/api/search_lelang?q=');
+        const data = await response.json();
+        
+        const tbody = document.querySelector('#lelangTable tbody');
+        tbody.innerHTML = '';
+        
+        if (data.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="4" class="text-center text-muted py-3">
+                        <i class="bi bi-tag fs-4 d-block mb-2"></i>
+                        Belum ada produk lelang
+                    </td>
+                </tr>
+            `;
+        } else {
+            data.forEach(p => {
+                const expiredDate = p.expired_date ? p.expired_date.split('T')[0] : '-';
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><span class="badge bg-secondary">${p.no_SKU}</span></td>
+                    <td>${p.Name_product}</td>
+                    <td class="text-danger fw-bold">Rp${parseInt(p.Price).toLocaleString()}</td>
+                    <td>${expiredDate}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading produk lelang:', error);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadProdukLelang();
+    setInterval(loadProdukLelang, 10000);
+});
+</script>
+{% endblock %}

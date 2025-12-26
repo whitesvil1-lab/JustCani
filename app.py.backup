@@ -1,0 +1,112 @@
+from flask import Flask, render_template, url_for, flash, redirect, request, session, jsonify
+from forms import RegistrationForm, LoginForm
+from logic import CashierSystem
+import secrets
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = secrets.token_hex(16)
+
+@app.route("/")
+@app.route("/home")
+def home():
+    return render_template('home.html', title='Home')
+
+@app.route("/login", methods=['GET', 'POST'])
+def login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        sys = CashierSystem()
+        user = sys.login_user(form.email.data, form.password.data)
+        sys.close()
+        if user:
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['email'] = user['email']
+            session['role'] = user['role']
+            flash(f'Selamat datang kembali, {user["username"]}!', 'success')
+            
+            if user['role'] == 'admin':
+                return redirect(url_for('admin'))
+            else:
+                return redirect(url_for('kasir'))
+        flash('Login gagal. Cek email dan password.', 'danger')
+    return render_template('login.html', title='Masuk', form=form)
+
+@app.route("/register", methods=['GET', 'POST'])
+def register():
+    form = RegistrationForm()
+    if form.validate_on_submit():
+        sys = CashierSystem()
+        berhasil = sys.register_user(
+            form.username.data, 
+            form.email.data, 
+            form.whatsapp.data, 
+            form.password.data
+        )
+        sys.close()
+        if berhasil:
+            flash('Akun berhasil dibuat! Silakan login.', 'success')
+            return redirect(url_for('login'))
+        flash('Gagal daftar. Email/Username mungkin sudah ada.', 'danger')
+    return render_template('register.html', title='Daftar', form=form)
+
+@app.route("/kasir")
+def kasir():
+    if not session.get('user_id'):
+        return redirect(url_for('login'))
+    return render_template('kasir.html', title='Menu Kasir')
+
+@app.route("/admin")
+def admin():
+    if session.get('role') != 'admin':
+        flash('Akses ditolak! Anda bukan admin.', 'danger')
+        return redirect(url_for('home'))
+    return render_template('admin.html', title='Admin Dashboard')
+
+@app.route("/admin/add", methods=['POST'])
+def admin_add():
+    sys = CashierSystem()
+    sys.inventory.add_produk_baru(
+        request.form.get('sku'),
+        request.form.get('name'),
+        request.form.get('harga'),
+        request.form.get('expired_date')
+    )
+    sys.close()
+    flash('Produk berhasil ditambahkan!', 'success')
+    return redirect(url_for('admin'))
+
+@app.route("/admin/restock", methods=['POST'])
+def admin_restock():
+    sys = CashierSystem()
+    cursor = sys.db.cursor()
+    sql = "UPDATE produk_biasa SET stok = stok + %s WHERE no_SKU = %s"
+    cursor.execute(sql, (request.form.get('qty'), request.form.get('sku')))
+    sys.db.commit()
+    sys.close()
+    flash('Stok berhasil diperbarui!', 'success')
+    return redirect(url_for('admin'))
+
+@app.route("/api/search")
+def api_search():
+    query = request.args.get('q', '')
+    sys = CashierSystem()
+    results = sys.inventory.search_produk(query)
+    sys.close()
+    return jsonify(results)
+
+@app.route("/api/checkout", methods=['POST'])
+def api_checkout():
+    data = request.json
+    sys = CashierSystem()
+    success, msg = sys.transaction.checkout(data['items'])
+    sys.close()
+    return jsonify({"success": success, "message": msg})
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for('home'))
+
+if __name__ == '__main__':
+    app.run(debug=True)

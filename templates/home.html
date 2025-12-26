@@ -1,0 +1,26 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="row justify-content-center align-items-center text-center" style="min-height: 70vh;">
+    <div class="col-md-8">
+        <div class="mb-4">
+            <i class="bi bi-bag-check-fill text-primary" style="font-size: 6rem;"></i>
+        </div>
+        
+        <h1 class="display-5 fw-bold mb-3">Selamat Datang di JustCani</h1>
+        <p class="lead text-muted mb-5">
+            Kelola stok dan transaksi toko Anda dengan mudah, cepat, dan modern.
+        </p>
+
+        {% if not session.get('user_id') %}
+            <div class="d-grid gap-3 d-sm-flex justify-content-sm-center">
+                <a href="{{ url_for('login') }}" class="btn btn-primary btn-lg px-5 shadow-sm rounded-pill">Masuk Sekarang</a>
+                <a href="{{ url_for('register') }}" class="btn btn-outline-secondary btn-lg px-5 rounded-pill">Daftar</a>
+            </div>
+        {% else %}
+            <a href="{{ url_for('kasir') }}" class="btn btn-success btn-lg px-5 rounded-pill shadow-sm">
+                <i class="bi bi-cart-fill me-2"></i>Mulai Jualan
+            </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

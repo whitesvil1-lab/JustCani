@@ -1,0 +1,95 @@
+:root {
+    --main-bg: #f8f9fa;       /* Background abu-abu sangat muda */
+    --card-bg: #ffffff;       /* Card putih bersih */
+    --text-main: #212529;     /* Teks hitam lembut */
+    --text-muted: #6c757d;    /* Teks abu-abu */
+    --primary: #0d6efd;       /* Biru standar bootstrap */
+    --border-radius: 12px;
+}
+
+body {
+    background-color: var(--main-bg);
+    color: var(--text-main);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    overflow-x: hidden;
+}
+
+/* Navbar Minimalis */
+.navbar {
+    background-color: var(--card-bg);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    padding: 15px 0;
+}
+
+/* Card Styling - Seperti Kertas Melayang */
+.card {
+    background-color: var(--card-bg);
+    border: none;
+    border-radius: var(--border-radius);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+    transition: transform 0.2s;
+}
+
+/* Input Form Bersih */
+.form-control {
+    background-color: #f1f3f5;
+    border: 1px solid transparent;
+    padding: 12px;
+    border-radius: 8px;
+    color: var(--text-main);
+}
+
+.form-control:focus {
+    background-color: #fff;
+    border-color: var(--primary);
+    box-shadow: none;
+}
+
+/* List Produk di Kasir */
+.product-item {
+    cursor: pointer;
+    border: 1px solid #dee2e6;
+    transition: all 0.2s;
+    background: #fff;
+}
+
+.product-item:hover {
+    border-color: var(--primary);
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(13, 110, 253, 0.1);
+}
+
+/* Sidebar Menu (Offcanvas) */
+.offcanvas {
+    border-top-left-radius: 20px;
+    border-bottom-left-radius: 20px;
+}
+
+.nav-link-custom {
+    padding: 15px 20px;
+    border-radius: 10px;
+    color: var(--text-main);
+    font-weight: 600;
+    transition: 0.2s;
+    display: block;
+    text-decoration: none;
+    margin-bottom: 5px;
+}
+
+.nav-link-custom:hover, .nav-link-custom.active {
+    background-color: #e9ecef;
+    color: var(--primary);
+}
+
+.nav-link-custom i {
+    margin-right: 10px;
+    font-size: 1.2rem;
+}
+
+/* Tombol Garis 3 */
+.btn-hamburger {
+    border: none;
+    background: transparent;
+    font-size: 24px;
+    color: var(--text-main);
+}

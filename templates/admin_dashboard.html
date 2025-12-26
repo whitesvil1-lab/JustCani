@@ -1,0 +1,476 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold">
+        <i class="bi bi-speedometer2 me-2"></i>Dashboard Statistik
+    </h3>
+    <div>
+        <a href="{{ url_for('admin') }}" class="btn btn-outline-primary me-2">
+            <i class="bi bi-arrow-left"></i> Kembali
+        </a>
+        <div class="btn-group">
+            <button class="btn btn-outline-secondary" onclick="loadStats('today')">
+                Hari Ini
+            </button>
+            <button class="btn btn-outline-secondary" onclick="loadStats('week')">
+                7 Hari
+            </button>
+            <button class="btn btn-outline-secondary" onclick="loadStats('month')">
+                30 Hari
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card border-primary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 text-muted">Total Pendapatan</h6>
+                        <h3 class="card-title" id="totalRevenue">Rp0</h3>
+                    </div>
+                    <div class="text-primary fs-1">
+                        <i class="bi bi-cash-stack"></i>
+                    </div>
+                </div>
+                <p class="card-text small" id="revenuePeriod">Hari ini</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card border-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 text-muted">Total Transaksi</h6>
+                        <h3 class="card-title" id="totalTransactions">0</h3>
+                    </div>
+                    <div class="text-success fs-1">
+                        <i class="bi bi-receipt"></i>
+                    </div>
+                </div>
+                <p class="card-text small" id="transactionsPeriod">Hari ini</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card border-info">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 text-muted">Rata-rata Transaksi</h6>
+                        <h3 class="card-title" id="avgTransaction">Rp0</h3>
+                    </div>
+                    <div class="text-info fs-1">
+                        <i class="bi bi-graph-up"></i>
+                    </div>
+                </div>
+                <p class="card-text small">Per transaksi</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card border-warning">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 text-muted">Produk Terjual</h6>
+                        <h3 class="card-title" id="totalProducts">0</h3>
+                    </div>
+                    <div class="text-warning fs-1">
+                        <i class="bi bi-box-seam"></i>
+                    </div>
+                </div>
+                <p class="card-text small">Total item</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row mb-4">
+    <div class="col-lg-8 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-bar-chart me-2"></i>Trend Penjualan
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="salesChart" style="height: 300px;">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Memuat data penjualan...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-pie-chart me-2"></i>Tipe Transaksi
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="typeChart" style="height: 300px;">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Memuat data tipe transaksi...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Top Products & Recent Transactions -->
+<div class="row">
+    <div class="col-lg-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-trophy me-2"></i>5 Produk Terlaris
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Produk</th>
+                                <th>Terjual</th>
+                                <th>Pendapatan</th>
+                            </tr>
+                        </thead>
+                        <tbody id="topProducts">
+                            <tr>
+                                <td colspan="4" class="text-center py-3">
+                                    <div class="spinner-border spinner-border-sm" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    Memuat data produk...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-clock-history me-2"></i>Transaksi Terbaru
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Kasir</th>
+                                <th>Total</th>
+                                <th>Waktu</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentTransactions">
+                            <tr>
+                                <td colspan="4" class="text-center py-3">
+                                    <div class="spinner-border spinner-border-sm" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    Memuat transaksi...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Load Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+let salesChartInstance = null;
+let typeChartInstance = null;
+
+async function loadStats(period = 'today') {
+    try {
+        // Update active button
+        document.querySelectorAll('.btn-group button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        event?.target?.classList.add('active');
+        
+        // Show loading states
+        showLoading();
+        
+        // Fetch stats
+        const response = await fetch(`/api/stats?period=${period}`);
+        const data = await response.json();
+        
+        // Update summary cards
+        updateSummaryCards(data.summary, period);
+        
+        // Update charts
+        updateCharts(data.charts);
+        
+        // Update tables
+        updateTables(data.tables);
+        
+    } catch (error) {
+        console.error('Error loading stats:', error);
+        alert('Gagal memuat statistik');
+    }
+}
+
+function updateSummaryCards(summary, period) {
+    // Format period text
+    const periodText = {
+        'today': 'Hari ini',
+        'week': '7 hari terakhir',
+        'month': '30 hari terakhir'
+    }[period];
+    
+    // Update revenue
+    document.getElementById('totalRevenue').textContent = 
+        `Rp${summary.total_revenue.toLocaleString()}`;
+    document.getElementById('revenuePeriod').textContent = periodText;
+    
+    // Update transactions
+    document.getElementById('totalTransactions').textContent = 
+        summary.total_transactions;
+    document.getElementById('transactionsPeriod').textContent = periodText;
+    
+    // Update average
+    document.getElementById('avgTransaction').textContent = 
+        `Rp${summary.avg_transaction.toLocaleString()}`;
+    
+    // Update products
+    document.getElementById('totalProducts').textContent = 
+        summary.total_products_sold;
+}
+
+function updateCharts(charts) {
+    // Sales trend chart
+    const salesCtx = document.createElement('canvas');
+    document.getElementById('salesChart').innerHTML = '';
+    document.getElementById('salesChart').appendChild(salesCtx);
+    
+    if (salesChartInstance) {
+        salesChartInstance.destroy();
+    }
+    
+    salesChartInstance = new Chart(salesCtx, {
+        type: 'line',
+        data: {
+            labels: charts.sales_trend.labels,
+            datasets: [{
+                label: 'Pendapatan (Rp)',
+                data: charts.sales_trend.data,
+                borderColor: '#0d6efd',
+                backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `Rp${context.raw.toLocaleString()}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'Rp' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+    
+    // Transaction type chart
+    const typeCtx = document.createElement('canvas');
+    document.getElementById('typeChart').innerHTML = '';
+    document.getElementById('typeChart').appendChild(typeCtx);
+    
+    if (typeChartInstance) {
+        typeChartInstance.destroy();
+    }
+    
+    typeChartInstance = new Chart(typeCtx, {
+        type: 'doughnut',
+        data: {
+            labels: charts.transaction_types.labels,
+            datasets: [{
+                data: charts.transaction_types.data,
+                backgroundColor: [
+                    '#0d6efd', // Biasa
+                    '#ffc107'  // Lelang
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = Math.round((context.raw / total) * 100);
+                            return `${context.label}: ${context.raw} transaksi (${percentage}%)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function updateTables(tables) {
+    // Top products
+    const topProductsTbody = document.getElementById('topProducts');
+    if (tables.top_products.length > 0) {
+        topProductsTbody.innerHTML = tables.top_products.map((product, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${product.name}</td>
+                <td>
+                    <span class="badge bg-primary">${product.sold} pcs</span>
+                </td>
+                <td class="fw-bold">Rp${product.revenue.toLocaleString()}</td>
+            </tr>
+        `).join('');
+    } else {
+        topProductsTbody.innerHTML = `
+            <tr>
+                <td colspan="4" class="text-center text-muted py-3">
+                    <i class="bi bi-box-seam fs-4 d-block mb-2"></i>
+                    Belum ada data penjualan
+                </td>
+            </tr>
+        `;
+    }
+    
+    // Recent transactions
+    const recentTbody = document.getElementById('recentTransactions');
+    if (tables.recent_transactions.length > 0) {
+        recentTbody.innerHTML = tables.recent_transactions.map(trx => `
+            <tr>
+                <td>
+                    <small class="text-muted">${trx.transaction_id}</small>
+                </td>
+                <td>${trx.username}</td>
+                <td class="fw-bold">Rp${trx.total_amount.toLocaleString()}</td>
+                <td>
+                    <small class="text-muted">${trx.time_ago}</small>
+                </td>
+            </tr>
+        `).join('');
+    } else {
+        recentTbody.innerHTML = `
+            <tr>
+                <td colspan="4" class="text-center text-muted py-3">
+                    <i class="bi bi-receipt fs-4 d-block mb-2"></i>
+                    Belum ada transaksi
+                </td>
+            </tr>
+        `;
+    }
+}
+
+function showLoading() {
+    // Summary cards
+    document.getElementById('totalRevenue').textContent = 'Loading...';
+    document.getElementById('totalTransactions').textContent = '...';
+    document.getElementById('avgTransaction').textContent = 'Loading...';
+    document.getElementById('totalProducts').textContent = '...';
+    
+    // Charts
+    document.getElementById('salesChart').innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Memuat data penjualan...</p>
+        </div>
+    `;
+    
+    document.getElementById('typeChart').innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Memuat data tipe transaksi...</p>
+        </div>
+    `;
+    
+    // Tables
+    document.getElementById('topProducts').innerHTML = `
+        <tr>
+            <td colspan="4" class="text-center py-3">
+                <div class="spinner-border spinner-border-sm" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                Memuat data produk...
+            </td>
+        </tr>
+    `;
+    
+    document.getElementById('recentTransactions').innerHTML = `
+        <tr>
+            <td colspan="4" class="text-center py-3">
+                <div class="spinner-border spinner-border-sm" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                Memuat transaksi...
+            </td>
+        </tr>
+    `;
+}
+
+// Auto refresh every 2 minutes
+setInterval(() => {
+    if (!document.hidden && window.location.pathname.includes('/admin/dashboard')) {
+        loadStats();
+    }
+}, 120000);
+
+// Load initial data
+document.addEventListener('DOMContentLoaded', function() {
+    loadStats('today');
+});
+</script>
+{% endblock %}

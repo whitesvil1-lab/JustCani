@@ -1,0 +1,328 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold">
+        <i class="bi bi-box-seam me-2"></i>Daftar Produk
+    </h3>
+    <div>
+        {% if session.get('role') == 'admin' %}
+        <a href="{{ url_for('admin') }}" class="btn btn-outline-primary me-2">
+            <i class="bi bi-arrow-left"></i> Kembali ke Admin
+        </a>
+        {% endif %}
+        <div class="btn-group" role="group">
+            <button type="button" id="btnBiasa" class="btn btn-primary" onclick="loadProducts('biasa')">
+                <i class="bi bi-cart me-1"></i> Produk Biasa
+            </button>
+            <button type="button" id="btnLelang" class="btn btn-outline-warning" onclick="loadProducts('lelang')">
+                <i class="bi bi-tag me-1"></i> Produk Lelang
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Filter dan Pencarian -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Cari Produk</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" id="searchInput" class="form-control" 
+                           placeholder="Cari nama produk atau SKU..." 
+                           onkeyup="filterProducts()">
+                </div>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Sortir Berdasarkan</label>
+                <select id="sortSelect" class="form-select" onchange="filterProducts()">
+                    <option value="name_asc">Nama A-Z</option>
+                    <option value="name_desc">Nama Z-A</option>
+                    <option value="price_asc">Harga Termurah</option>
+                    <option value="price_desc">Harga Termahal</option>
+                    <option value="expiry_asc">Kadaluarsa Terdekat</option>
+                    <option value="expiry_desc">Kadaluarsa Terjauh</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabel Produk -->
+<div class="card">
+    <div class="card-header bg-dark text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-list-ul me-2"></i>
+            <span id="tableTitle">Daftar Produk Biasa</span>
+            <span class="badge bg-light text-dark ms-2" id="productCount">0 produk</span>
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover" id="productsTable">
+                <thead id="tableHeader">
+                    <!-- Header akan diisi oleh JavaScript -->
+                </thead>
+                <tbody id="productsBody">
+                    <tr>
+                        <td colspan="5" class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">Memuat data produk...</p>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Detail Produk -->
+<div class="modal fade" id="productModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Detail Produk</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="productDetailContent">
+                Loading...
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentType = 'biasa';
+let allProducts = [];
+
+async function loadProducts(type) {
+    currentType = type;
+    
+    // Update button styles
+    document.getElementById('btnBiasa').className = type === 'biasa' ? 'btn btn-primary' : 'btn btn-outline-primary';
+    document.getElementById('btnLelang').className = type === 'lelang' ? 'btn btn-warning' : 'btn btn-outline-warning';
+    
+    // Update table title
+    document.getElementById('tableTitle').textContent = 
+        type === 'biasa' ? 'Daftar Produk Biasa' : 'Daftar Produk Lelang';
+    
+    // Show loading
+    document.getElementById('productsBody').innerHTML = `
+        <tr>
+            <td colspan="5" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 text-muted">Memuat data produk...</p>
+            </td>
+        </tr>
+    `;
+    
+    try {
+        // Fetch data from API
+        const endpoint = type === 'biasa' ? '/api/search?q=' : '/api/search_lelang?q=';
+        const response = await fetch(endpoint);
+        allProducts = await response.json();
+        
+        // Set table header
+        const headers = type === 'biasa' 
+            ? `<tr>
+                    <th>SKU</th>
+                    <th>Nama Produk</th>
+                    <th>Harga</th>
+                    <th>Stok</th>
+                    <th>Expired Date</th>
+                    <th>Aksi</th>
+                </tr>`
+            : `<tr>
+                    <th>SKU</th>
+                    <th>Nama Produk</th>
+                    <th>Harga Lelang</th>
+                    <th>Expired Date</th>
+                    <th>Aksi</th>
+                </tr>`;
+        
+        document.getElementById('tableHeader').innerHTML = headers;
+        
+        // Filter and display products
+        filterProducts();
+        
+    } catch (error) {
+        console.error('Error loading products:', error);
+        document.getElementById('productsBody').innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center py-5 text-danger">
+                    <i class="bi bi-exclamation-triangle fs-4 d-block mb-2"></i>
+                    Gagal memuat data produk
+                </td>
+            </tr>
+        `;
+    }
+}
+
+function filterProducts() {
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+    const sortBy = document.getElementById('sortSelect').value;
+    
+    // Filter products
+    let filtered = allProducts.filter(p => 
+        p.Name_product.toLowerCase().includes(searchTerm) || 
+        p.no_SKU.toString().includes(searchTerm)
+    );
+    
+    // Sort products
+    filtered.sort((a, b) => {
+        switch(sortBy) {
+            case 'name_asc':
+                return a.Name_product.localeCompare(b.Name_product);
+            case 'name_desc':
+                return b.Name_product.localeCompare(a.Name_product);
+            case 'price_asc':
+                return a.Price - b.Price;
+            case 'price_desc':
+                return b.Price - a.Price;
+            case 'expiry_asc':
+                return new Date(a.expired_date) - new Date(b.expired_date);
+            case 'expiry_desc':
+                return new Date(b.expired_date) - new Date(a.expired_date);
+            default:
+                return 0;
+        }
+    });
+    
+    // Update count
+    document.getElementById('productCount').textContent = `${filtered.length} produk`;
+    
+    // Display products
+    const tbody = document.getElementById('productsBody');
+    tbody.innerHTML = '';
+    
+    if (filtered.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="${currentType === 'biasa' ? 6 : 5}" class="text-center py-5 text-muted">
+                    <i class="bi bi-search fs-4 d-block mb-2"></i>
+                    Tidak ada produk ditemukan
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    filtered.forEach(product => {
+        const expiredDate = product.expired_date ? 
+            new Date(product.expired_date).toLocaleDateString('id-ID') : '-';
+        
+        const row = document.createElement('tr');
+        
+        if (currentType === 'biasa') {
+            row.innerHTML = `
+                <td><span class="badge bg-secondary">${product.no_SKU}</span></td>
+                <td class="fw-bold">${product.Name_product}</td>
+                <td>Rp${parseInt(product.Price).toLocaleString()}</td>
+                <td>
+                    <span class="badge ${product.stok > 10 ? 'bg-success' : product.stok > 0 ? 'bg-warning' : 'bg-danger'}">
+                        ${product.stok} pcs
+                    </span>
+                </td>
+                <td>${expiredDate}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-info" onclick="showProductDetail(${product.no_SKU}, '${currentType}')">
+                        <i class="bi bi-eye"></i> Detail
+                    </button>
+                </td>
+            `;
+        } else {
+            row.innerHTML = `
+                <td><span class="badge bg-secondary">${product.no_SKU}</span></td>
+                <td class="fw-bold">${product.Name_product}</td>
+                <td class="text-danger fw-bold">Rp${parseInt(product.Price).toLocaleString()}</td>
+                <td>${expiredDate}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-info" onclick="showProductDetail(${product.no_SKU}, '${currentType}')">
+                        <i class="bi bi-eye"></i> Detail
+                    </button>
+                </td>
+            `;
+        }
+        
+        tbody.appendChild(row);
+    });
+}
+
+async function showProductDetail(sku, type) {
+    try {
+        // Fetch product detail
+        const endpoint = type === 'biasa' ? '/api/search?q=' : '/api/search_lelang?q=';
+        const response = await fetch(endpoint + sku);
+        const products = await response.json();
+        const product = products.find(p => p.no_SKU == sku);
+        
+        if (!product) {
+            document.getElementById('productDetailContent').innerHTML = 
+                '<div class="alert alert-danger">Produk tidak ditemukan</div>';
+            return;
+        }
+        
+        const expiredDate = product.expired_date ? 
+            new Date(product.expired_date).toLocaleDateString('id-ID') : 'Tidak ada';
+        
+        let html = `
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong>SKU:</strong> <span class="badge bg-secondary">${product.no_SKU}</span></p>
+                    <p><strong>Nama Produk:</strong> ${product.Name_product}</p>
+                    <p><strong>Harga:</strong> <span class="fw-bold text-primary">Rp${parseInt(product.Price).toLocaleString()}</span></p>
+                </div>
+                <div class="col-md-6">
+                    <p><strong>Tanggal Kadaluarsa:</strong> ${expiredDate}</p>
+        `;
+        
+        if (type === 'biasa') {
+            html += `
+                    <p><strong>Stok Tersedia:</strong> 
+                        <span class="badge ${product.stok > 10 ? 'bg-success' : product.stok > 0 ? 'bg-warning' : 'bg-danger'}">
+                            ${product.stok} pcs
+                        </span>
+                    </p>
+            `;
+        } else {
+            html += `
+                    <p><strong>Jenis:</strong> 
+                        <span class="badge bg-warning">PRODUK LELANG</span>
+                    </p>
+                    <p class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Harga sudah diskon 50%</p>
+            `;
+        }
+        
+        html += `
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('productDetailContent').innerHTML = html;
+        new bootstrap.Modal(document.getElementById('productModal')).show();
+        
+    } catch (error) {
+        console.error('Error loading product detail:', error);
+        document.getElementById('productDetailContent').innerHTML = 
+            '<div class="alert alert-danger">Gagal memuat detail produk</div>';
+    }
+}
+
+// Auto refresh every 60 seconds
+setInterval(() => {
+    if (!document.hidden) {
+        loadProducts(currentType);
+    }
+}, 60000);
+
+// Load initial data
+document.addEventListener('DOMContentLoaded', function() {
+    loadProducts('biasa');
+});
+</script>
+{% endblock %}

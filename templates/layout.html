@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JustCani - {{ title }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+    <nav class="navbar sticky-top">
+        <div class="container">
+            <a class="navbar-brand fw-bold fs-3 text-primary" href="/">
+                <i class="bi bi-shop me-2"></i>JustCani
+            </a>
+            <button class="btn-hamburger" type="button" data-bs-toggle="offcanvas" data-bs-target="#menuSidebar">
+                <i class="bi bi-list"></i>
+            </button>
+        </div>
+    </nav>
+
+    <div class="offcanvas offcanvas-end" tabindex="-1" id="menuSidebar">
+        <div class="offcanvas-header">
+            <h5 class="offcanvas-title fw-bold">Menu JustCani</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+        </div>
+        <div class="offcanvas-body">
+            {% if session.get('user_id') %}
+                <div class="alert alert-primary mb-4">
+                    <small>Halo, {{ session.get('role')|capitalize }}!</small><br>
+                    <strong>{{ session.get('username') }}</strong>
+                </div>
+                <a href="{{ url_for('kasir') }}" class="nav-link-custom">
+                    <i class="bi bi-cart3"></i> Menu Kasir
+                </a>
+                
+                <!-- TAMBAH LINK LIHAT PRODUK -->
+                <a href="{{ url_for('products') }}" class="nav-link-custom">
+                    <i class="bi bi-box-seam"></i> Lihat Produk
+                </a>
+                
+                {% if session.get('role') == 'admin' %}
+                    <a href="{{ url_for('admin') }}" class="nav-link-custom">
+                        <i class="bi bi-gear"></i> Admin Panel
+                    </a>
+                    <a href="{{ url_for('admin_history') }}" class="nav-link-custom">
+                        <i class="bi bi-clock-history"></i> History Transaksi
+                    </a>
+                {% endif %}
+                
+                <hr>
+                <a href="{{ url_for('logout') }}" class="nav-link-custom text-danger">
+                    <i class="bi bi-box-arrow-right"></i> Keluar
+                </a>
+            {% else %}
+                <a href="{{ url_for('home') }}" class="nav-link-custom">
+                    <i class="bi bi-house"></i> Beranda
+                </a>
+                <a href="{{ url_for('login') }}" class="nav-link-custom">
+                    <i class="bi bi-box-arrow-in-right"></i> Masuk
+                </a>
+                <a href="{{ url_for('register') }}" class="nav-link-custom">
+                    <i class="bi bi-person-plus"></i> Daftar Akun
+                </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="container mt-4 mb-5">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} border-0 shadow-sm">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
