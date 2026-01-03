@@ -5,6 +5,20 @@ import json
 import random
 from datetime import datetime
 
+# ============================================
+# BARCODE IMPORTS (tambah di atas)
+# ============================================
+try:
+    import barcode
+    from barcode.writer import ImageWriter
+    from io import BytesIO
+    import base64
+    BARCODE_AVAILABLE = True
+except ImportError:
+    BARCODE_AVAILABLE = False
+    print("INFO: python-barcode not installed. Barcode features limited.")
+# ============================================
+
 class Database:
     @staticmethod
     def get_conn():
@@ -23,23 +37,207 @@ class Inventory:
     def __init__(self, db_conn):
         self.db = db_conn
 
-    def search_produk(self, query):
-        if not self.db: return []
-        cursor = self.db.cursor(dictionary=True)
-        sql = "SELECT * FROM produk_biasa WHERE Name_product LIKE %s OR no_SKU = %s"
-        cursor.execute(sql, (f"%{query}%", query))
-        result = cursor.fetchall()
+    # ============================================
+    # FUNGSI BARCODE (TAMBAH DI DALAM CLASS)
+    # ============================================
+    
+    def generate_product_barcode(self, sku, product_name, price):
+        """Generate barcode image untuk produk baru"""
+        if not BARCODE_AVAILABLE:
+            return None
+        
+        try:
+            # Generate barcode Code128
+            code128 = barcode.get_barcode_class('code128')
+            barcode_instance = code128(str(sku), writer=ImageWriter())
+            
+            # Save to bytes
+            buffer = BytesIO()
+            barcode_instance.write(buffer)
+            buffer.seek(0)
+            
+            # Convert to base64
+            barcode_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            barcode_data = f"data:image/png;base64,{barcode_base64}"
+            
+            # Save to database
+            cursor = self.db.cursor()
+            try:
+                # Try regular products          
+                cursor.execute("""
+                    UPDATE produk_biasa 
+                    SET barcode_image = %s 
+                    WHERE no_SKU = %s
+                """, (barcode_data, sku))
+                
+                # Try auction products
+                cursor.execute("""
+                    UPDATE produk_lelang 
+                    SET barcode_image = %s 
+                    WHERE no_SKU = %s
+                """, (barcode_data, sku))
+                
+                self.db.commit()
+                print(f"✅ Barcode saved for SKU: {sku}")
+            except Exception as e:
+                print(f"⚠️ Could not save barcode to DB: {e}")
+                self.db.rollback()
+            finally:
+                cursor.close()
+            
+            return barcode_data
+        except Exception as e:
+            print(f"Error generating barcode: {e}")
+            return None
+        
+        def save_barcode_to_db(self, sku, barcode_data):
+            """Simpan barcode ke database"""
+            if not self.db:
+                return False
+        
+            cursor = self.db.cursor()
+            try:
+                # Coba update produk biasa
+                cursor.execute("""
+                    UPDATE produk_biasa 
+                    SET barcode_image = %s 
+                    WHERE no_SKU = %s
+                """, (barcode_data, sku))
+            
+                # Coba update produk lelang
+                cursor.execute("""
+                    UPDATE produk_lelang 
+                    SET barcode_image = %s 
+                    WHERE no_SKU = %s
+                """, (barcode_data, sku))
+            
+                self.db.commit()
+                return True
+            except Exception as e:
+                print(f"Error saving barcode to DB: {e}")
+                self.db.rollback()
+                return False
+            finally:
+                cursor.close()
+
+def get_product_barcode(self, sku):
+    """Ambil barcode dari database"""
+    if not self.db:
+        return None
+    
+    cursor = self.db.cursor(dictionary=True)
+    try:
+        # Cek di produk biasa
+        cursor.execute("""
+            SELECT barcode_image 
+            FROM produk_biasa 
+            WHERE no_SKU = %s
+        """, (sku,))
+        result = cursor.fetchone()
+        
+        if result and result['barcode_image']:
+            return result['barcode_image']
+        
+        # Cek di produk lelang
+        cursor.execute("""
+            SELECT barcode_image 
+            FROM produk_lelang 
+            WHERE no_SKU = %s
+        """, (sku,))
+        result = cursor.fetchone()
+        
+        if result and result['barcode_image']:
+            return result['barcode_image']
+        
+        return None
+    except Exception as e:
+        print(f"Error getting barcode from DB: {e}")
+        return None
+    finally:
         cursor.close()
-        return result
+    # ============================================
+    
+class Inventory:
+    def __init__(self, db_conn):
+        self.db = db_conn
+
+    def search_produk(self, query):
+        """Search produk biasa - FIXED"""
+        if not self.db: 
+            return []
+        
+        cursor = self.db.cursor(dictionary=True)
+        try:
+            # Clean query
+            query = str(query).strip()
+            
+            # Jika query kosong, tampilkan semua
+            if query == '':
+                sql = "SELECT no_SKU, Name_product, Price, expired_date, stok FROM produk_biasa LIMIT 50"
+                cursor.execute(sql)
+            else:
+                # Cari dengan berbagai cara
+                sql = """
+                SELECT no_SKU, Name_product, Price, expired_date, stok 
+                FROM produk_biasa 
+                WHERE Name_product LIKE %s 
+                OR no_SKU = %s
+                OR CAST(no_SKU AS CHAR) = %s
+                LIMIT 50
+                """
+                
+                # Coba convert ke integer untuk exact match
+                try:
+                    sku_int = int(query)
+                except:
+                    sku_int = -9999  # nilai yang tidak mungkin ada
+                    
+                cursor.execute(sql, (
+                    f"%{query}%",      # Nama produk
+                    sku_int,           # SKU sebagai integer
+                    query              # SKU sebagai string
+                ))
+            
+            result = cursor.fetchall()
+            print(f"[DEBUG] search_produk found {len(result)} results for query: '{query}'")
+            return result
+            
+        except Exception as e:
+            print(f"[ERROR] search_produk: {e}")
+            return []
+        finally:
+            cursor.close()
 
     def search_produk_lelang(self, query):
-        if not self.db: return []
+        """Search produk lelang - FIXED VERSION"""
+        if not self.db: 
+            return []
+        
         cursor = self.db.cursor(dictionary=True)
-        sql = "SELECT * FROM produk_lelang WHERE Name_product LIKE %s OR no_SKU = %s"
-        cursor.execute(sql, (f"%{query}%", query))
-        result = cursor.fetchall()
-        cursor.close()
-        return result
+        try:
+            # FIX: Convert SKU to string untuk match dengan query
+            sql = """
+            SELECT no_SKU, Name_product, Price, expired_date 
+            FROM produk_lelang 
+            WHERE Name_product LIKE %s 
+               OR no_SKU = %s 
+               OR CAST(no_SKU AS CHAR) LIKE %s
+            LIMIT 50
+            """
+            # Coba match dengan integer jika query adalah angka
+            try:
+                sku_int = int(query)
+            except:
+                sku_int = 0
+                
+            cursor.execute(sql, (f"%{query}%", sku_int, f"%{query}%"))
+            result = cursor.fetchall()
+            return result
+        except Exception as e:
+            print(f"[ERROR] search_produk_lelang: {e}")
+            return []
+        finally:
+            cursor.close()
 
     def move_to_lelang(self, sku, reason):
         if not self.db: return False, "Database tidak terhubung"
@@ -76,13 +274,22 @@ class Inventory:
         try:
             sql = "INSERT INTO produk_biasa (no_SKU, Name_product, Price, expired_date, stok) VALUES (%s, %s, %s, %s, 0)"
             cursor.execute(sql, (sku, name, harga, expired_date))
+            
+            # ============================================
+            # AUTO GENERATE BARCODE SETELAH TAMBAH PRODUK
+            # ============================================
+            barcode_img = self.generate_product_barcode(sku, name, harga)
+            if barcode_img:
+                print(f"✅ Barcode generated for SKU: {sku}")
+            # ============================================
+            
             self.db.commit()
         except Error as e:
             print(f"Error tambah produk: {e}")
             self.db.rollback()
         finally:
             cursor.close()
-
+            
 class TransactionHistory:
     def __init__(self, db_conn):
         self.db = db_conn
@@ -221,7 +428,8 @@ class Transaction:
     
     def checkout(self, items, user_id, username):
         """Checkout transaksi biasa dengan menyimpan history"""
-        if not self.db: return False, "Database tidak terhubung"
+        if not self.db: 
+            return False, "Database tidak terhubung"
         
         cursor = self.db.cursor()
         try:
@@ -230,11 +438,14 @@ class Transaction:
             
             # 1. Validasi dan hitung total
             for item in items:
-                cursor.execute("SELECT Name_product, Price, stok FROM produk_biasa WHERE no_SKU = %s", (item['sku'],))
+                # Convert SKU to string for consistency
+                sku = str(item['sku'])
+                
+                cursor.execute("SELECT Name_product, Price, stok FROM produk_biasa WHERE no_SKU = %s", (sku,))
                 result = cursor.fetchone()
                 
                 if not result:
-                    return False, f"Produk {item['sku']} tidak ditemukan"
+                    return False, f"Produk {sku} tidak ditemukan"
                 
                 if result[2] < item['qty']:
                     return False, f"Stok tidak cukup untuk {result[0]}"
@@ -243,7 +454,7 @@ class Transaction:
                 total_amount += item_total
                 
                 transaction_items.append({
-                    'sku': item['sku'],
+                    'sku': sku,
                     'name': result[0],
                     'price': result[1],
                     'qty': item['qty'],
@@ -252,8 +463,9 @@ class Transaction:
             
             # 2. Update stok
             for item in items:
+                sku = str(item['sku'])
                 sql = "UPDATE produk_biasa SET stok = stok - %s WHERE no_SKU = %s"
-                cursor.execute(sql, (item['qty'], item['sku']))
+                cursor.execute(sql, (item['qty'], sku))
             
             # 3. Simpan ke history
             transaction_id = self.generate_transaction_id()

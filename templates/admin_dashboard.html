@@ -215,7 +215,9 @@ async function loadStats(period = 'today') {
         document.querySelectorAll('.btn-group button').forEach(btn => {
             btn.classList.remove('active');
         });
-        event?.target?.classList.add('active');
+        if (event && event.target) {
+            event.target.classList.add('active');
+        }
         
         // Show loading states
         showLoading();
@@ -348,7 +350,9 @@ function updateCharts(charts) {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const dataArray = context.dataset.data || [];
+                            const total = Array.isArray(dataArray) ? 
+                                dataArray.reduce((a, b) => a + b, 0) : 0;
                             const percentage = Math.round((context.raw / total) * 100);
                             return `${context.label}: ${context.raw} transaksi (${percentage}%)`;
                         }
@@ -464,7 +468,7 @@ function showLoading() {
 // Auto refresh every 2 minutes
 setInterval(() => {
     if (!document.hidden && window.location.pathname.includes('/admin/dashboard')) {
-        loadStats();
+        loadStats('today');
     }
 }, 120000);
 

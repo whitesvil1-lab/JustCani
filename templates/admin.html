@@ -96,6 +96,92 @@
     </div>
 </div>
 
+
+<div class="row mt-4">
+    <!-- Card Generate Barcode -->
+    <div class="col-md-6 mb-4">
+        <div class="card p-4 h-100 border-start border-4 border-success">
+            <h5 class="fw-bold mb-4 text-success">
+                <i class="bi bi-upc-scan me-2"></i>Generate Barcode
+            </h5>
+            
+            <!-- Form Generate Barcode -->
+            <div class="mb-3">
+                <label class="form-label small fw-bold text-muted">PILIH PRODUK</label>
+                <select class="form-control" id="barcodeProductSelect" onchange="updateBarcodePreview()">
+                    <option value="">-- Pilih produk --</option>
+                    <!-- Will be populated by JavaScript -->
+                </select>
+            </div>
+            
+            <!-- Preview Barcode -->
+            <div class="mb-3 text-center" id="barcodePreviewArea" style="display: none;">
+                <div class="border rounded p-3 bg-light">
+                    <img id="barcodeImage" src="" class="img-fluid mb-2" style="max-height: 80px;">
+                    <p class="small mb-1" id="barcodeProductName"></p>
+                    <p class="small text-muted" id="barcodeProductSKU"></p>
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="d-grid gap-2">
+                <button type="button" class="btn btn-success" onclick="generateBarcode()">
+                    <i class="bi bi-magic me-1"></i> Generate Barcode
+                </button>
+                <button type="button" class="btn btn-outline-primary" onclick="printBarcode()" id="printBtn" disabled>
+                    <i class="bi bi-printer me-1"></i> Print Label
+                </button>
+                <button type="button" class="btn btn-outline-secondary" onclick="downloadBarcode()" id="downloadBtn" disabled>
+                    <i class="bi bi-download me-1"></i> Download PNG
+                </button>
+            </div>
+            
+            <!-- Info -->
+            <div class="alert alert-info mt-3 small">
+                <i class="bi bi-info-circle me-2"></i>
+                Barcode akan digenerate dari SKU produk. Format: Code128
+            </div>
+        </div>
+    </div>
+    
+    <!-- Card Batch Generate (Generate semua produk) -->
+    <div class="col-md-6 mb-4">
+        <div class="card p-4 h-100 border-start border-4 border-warning">
+            <h5 class="fw-bold mb-4 text-warning">
+                <i class="bi bi-upc-scan me-2"></i>Batch Generate Barcode
+            </h5>
+            
+            <p class="text-muted small mb-3">
+                Generate barcode untuk semua produk yang belum memiliki barcode.
+            </p>
+            
+            <div class="mb-3">
+                <div class="progress" style="height: 10px;">
+                    <div id="batchProgress" class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div class="d-flex justify-content-between mt-1">
+                    <small id="batchStatus">Ready</small>
+                    <small id="batchProgressText">0/0</small>
+                </div>
+            </div>
+            
+            <div class="d-grid gap-2">
+                <button type="button" class="btn btn-warning" onclick="generateAllBarcodes()">
+                    <i class="bi bi-play-circle me-1"></i> Generate All Missing Barcodes
+                </button>
+                <button type="button" class="btn btn-outline-secondary" onclick="viewBarcodeList()">
+                    <i class="bi bi-list-ul me-1"></i> View All Barcodes
+                </button>
+                <button type="button" class="btn btn-outline-info" onclick="checkBarcodeStatus()">
+                    <i class="bi bi-question-circle me-1"></i> Check Status
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+        
 <div class="card mt-4">
     <div class="card-header bg-warning text-white">
         <h5 class="mb-0">
@@ -130,12 +216,15 @@
 async function loadProdukLelang() {
     try {
         const response = await fetch('/api/search_lelang?q=');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const data = await response.json();
         
         const tbody = document.querySelector('#lelangTable tbody');
         tbody.innerHTML = '';
         
-        if (data.length === 0) {
+        if (!data || data.length === 0) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="4" class="text-center text-muted py-3">
@@ -146,12 +235,19 @@ async function loadProdukLelang() {
             `;
         } else {
             data.forEach(p => {
-                const expiredDate = p.expired_date ? p.expired_date.split('T')[0] : '-';
+                // FIX: Handle undefined/null values
+                const sku = p.no_SKU || p.sku || 'N/A';
+                const name = p.Name_product || p.name || 'Produk tidak ada nama';
+                const price = p.Price || p.price || 0;
+                const expiredDate = p.expired_date ? 
+                    new Date(p.expired_date).toISOString().split('T')[0] : 
+                    '-';
+                
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td><span class="badge bg-secondary">${p.no_SKU}</span></td>
-                    <td>${p.Name_product}</td>
-                    <td class="text-danger fw-bold">Rp${parseInt(p.Price).toLocaleString()}</td>
+                    <td><span class="badge bg-secondary">${sku}</span></td>
+                    <td>${name}</td>
+                    <td class="text-danger fw-bold">Rp${parseInt(price).toLocaleString()}</td>
                     <td>${expiredDate}</td>
                 `;
                 tbody.appendChild(row);
@@ -159,6 +255,15 @@ async function loadProdukLelang() {
         }
     } catch (error) {
         console.error('Error loading produk lelang:', error);
+        const tbody = document.querySelector('#lelangTable tbody');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="4" class="text-center text-danger py-3">
+                    <i class="bi bi-exclamation-triangle fs-4 d-block mb-2"></i>
+                    Error memuat data: ${error.message}
+                </td>
+            </tr>
+        `;
     }
 }
 

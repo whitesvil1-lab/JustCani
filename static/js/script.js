@@ -1,252 +1,447 @@
-// VARIABLES
-let cart = [];
-let currentMode = 'biasa';
+// ============================================
+// KASIR PAGE FUNCTIONS
+// ============================================
 
-// SET MODE (BIASA/LELANG)
+let currentMode = 'biasa';
+let cartItems = [];
+
+// Fungsi untuk set mode (biasa/lelang)
 function setMode(mode) {
     currentMode = mode;
+    document.getElementById('cartMode').textContent = mode === 'biasa' ? 'Biasa' : 'Lelang';
     
     // Update button styles
-    const btnBiasa = document.getElementById('btnBiasa');
-    const btnLelang = document.getElementById('btnLelang');
+    document.getElementById('btnBiasa').className = mode === 'biasa' ? 'btn btn-primary' : 'btn btn-outline-primary';
+    document.getElementById('btnLelang').className = mode === 'lelang' ? 'btn btn-warning' : 'btn btn-outline-warning';
     
-    if (mode === 'biasa') {
-        btnBiasa.className = 'btn btn-primary';
-        btnLelang.className = 'btn btn-outline-warning';
-    } else {
-        btnBiasa.className = 'btn btn-outline-primary';
-        btnLelang.className = 'btn btn-warning';
-    }
-    
-    // Update cart mode label
-    const cartMode = document.getElementById('cartMode');
-    cartMode.textContent = mode === 'biasa' ? 'Biasa' : 'Lelang';
-    cartMode.className = mode === 'biasa' ? 'badge bg-info ms-2' : 'badge bg-warning ms-2';
-    
-    // Show/hide lelang info
-    const lelangInfo = document.getElementById('lelangInfo');
-    lelangInfo.className = mode === 'lelang' ? 'alert alert-warning mt-3' : 'alert alert-warning mt-3 d-none';
-    
-    // Clear search
-    document.getElementById('searchResults').innerHTML = 
-        '<div class="text-muted text-center py-5 w-100">' +
-        '<i class="bi bi-box-seam fs-1 d-block mb-2"></i>' +
-        'Silakan cari barang</div>';
-    
-    document.getElementById('query').value = '';
+    // Search ulang
+    searchItem();
 }
 
-// SEARCH PRODUCTS
+// Fungsi search produk
 async function searchItem() {
     const query = document.getElementById('query').value;
     const resultsDiv = document.getElementById('searchResults');
     
-    if (query.length < 1) {
-        resultsDiv.innerHTML = '<div class="text-muted text-center p-3">Mulai mengetik untuk mencari...</div>';
-        return;
-    }
-
+    // Show loading
+    resultsDiv.innerHTML = `
+        <div class="col-12 text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Mencari produk...</p>
+        </div>
+    `;
+    
     try {
-        const endpoint = currentMode === 'lelang' ? '/api/search_lelang' : '/api/search';
-        const response = await fetch(endpoint + '?q=' + encodeURIComponent(query));
-        const data = await response.json();
-
-        let html = '';
-        if (data.length === 0) {
-            html = '<div class="text-danger text-center p-3">Barang tidak ditemukan.</div>';
-        } else {
-            data.forEach(p => {
-                const badgeClass = currentMode === 'lelang' ? 'badge bg-warning' : 'badge bg-primary';
-                const badgeText = currentMode === 'lelang' ? 'LELANG' : 'BIASA';
-                const btnClass = currentMode === 'lelang' ? 'btn btn-warning' : 'btn btn-primary';
-                const btnIcon = currentMode === 'lelang' ? 'bi-tag' : 'bi-plus-lg';
-                const stokText = p.stok !== undefined ? '| Stok: ' + p.stok : '';
-                
-                // Escape quotes in product name
-                const safeName = p.Name_product.replace(/'/g, "\\'").replace(/"/g, '\\"');
-                
-                html += '<div class="product-item p-3 mb-2 rounded d-flex justify-content-between align-items-center">' +
-                        '<div>' +
-                        '<span class="d-block fw-bold text-dark">' + p.Name_product + '</span>' +
-                        '<small class="text-muted">SKU: ' + p.no_SKU + ' ' + stokText + 
-                        '<span class="' + badgeClass + ' ms-2">' + badgeText + '</span></small>' +
-                        '</div>' +
-                        '<div class="text-end">' +
-                        '<span class="d-block fw-bold ' + (currentMode === 'lelang' ? 'text-danger' : 'text-primary') + '">' +
-                        'Rp' + parseInt(p.Price).toLocaleString() + '</span>' +
-                        '<button class="btn ' + btnClass + ' btn-sm mt-1" ' +
-                        'onclick="addToCart(\'' + p.no_SKU + '\', \'' + safeName + '\', ' + p.Price + ', ' + (p.stok || 0) + ')">' +
-                        '<i class="bi ' + btnIcon + '"></i> Tambah</button>' +
-                        '</div>' +
-                        '</div>';
-            });
+        const endpoint = currentMode === 'biasa' ? '/api/search' : '/api/search_lelang';
+        const response = await fetch(`${endpoint}?q=${encodeURIComponent(query)}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
         }
-        resultsDiv.innerHTML = html;
+        
+        const data = await response.json();
+        
+        // Handle error response
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        // Panggil fungsi displayResults
+        displayResults(data);
+        
     } catch (error) {
-        console.error("Search Error:", error);
-        resultsDiv.innerHTML = '<div class="text-danger text-center p-3">Error sistem.</div>';
+        console.error('Search error:', error);
+        resultsDiv.innerHTML = `
+            <div class="col-12 text-center py-5">
+                <i class="bi bi-exclamation-triangle text-danger fs-1 d-block mb-2"></i>
+                <p class="text-danger">Gagal memuat produk</p>
+                <small class="text-muted">${error.message}</small>
+            </div>
+        `;
     }
 }
 
-// ADD TO CART
-function addToCart(sku, name, price, stock) {
-    // Check stock for regular products
-    if (currentMode === 'biasa' && stock <= 0) {
-        alert("Stok barang ini kosong!");
+// Fungsi untuk menampilkan hasil pencarian
+function displayResults(products) {
+    const resultsDiv = document.getElementById('searchResults');
+    
+    if (!products || products.length === 0) {
+        resultsDiv.innerHTML = `
+            <div class="col-12 text-center py-5">
+                <i class="bi bi-search fs-1 text-muted d-block mb-2"></i>
+                <p class="text-muted">Tidak ada produk ditemukan</p>
+            </div>
+        `;
         return;
     }
     
-    // Find existing item in cart
-    const existingIndex = cart.findIndex(item => item.sku === sku && item.mode === currentMode);
+    resultsDiv.innerHTML = '';
     
-    if (existingIndex !== -1) {
-        // Increase quantity if exists
-        cart[existingIndex].qty += 1;
+    products.forEach(product => {
+        const card = document.createElement('div');
+        card.className = 'col-md-6 col-lg-4 mb-3';
+        
+        const expiredDate = product.expired_date ? 
+            new Date(product.expired_date).toISOString().split('T')[0] : '-';
+        
+        card.innerHTML = `
+            <div class="card h-100 border shadow-sm">
+                <div class="card-body">
+                    <h6 class="card-title fw-bold">${product.Name_product}</h6>
+                    <p class="card-text small text-muted mb-1">
+                        SKU: <span class="badge bg-secondary">${product.no_SKU}</span>
+                    </p>
+                    <p class="card-text mb-1">
+                        <span class="fw-bold text-primary">Rp${parseInt(product.Price).toLocaleString()}</span>
+                    </p>
+                    ${currentMode === 'biasa' ? 
+                        `<p class="card-text small">Stok: <span class="badge ${product.stok > 10 ? 'bg-success' : 'bg-warning'}">${product.stok} pcs</span></p>` : 
+                        `<p class="card-text small text-warning"><i class="bi bi-tag"></i> Produk Lelang</p>`
+                    }
+                    <p class="card-text small text-muted">Exp: ${expiredDate}</p>
+                    <button class="btn btn-sm btn-outline-primary w-100" 
+                            onclick="addToCart(${product.no_SKU}, '${product.Name_product.replace(/'/g, "\\'")}', ${product.Price})">
+                        <i class="bi bi-cart-plus"></i> Tambah
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        resultsDiv.appendChild(card);
+    });
+}
+
+// Fungsi tambah ke keranjang
+function addToCart(sku, name, price) {
+    // Cek apakah item sudah ada di keranjang
+    const existingItem = cartItems.find(item => item.sku == sku && item.mode === currentMode);
+    
+    if (existingItem) {
+        existingItem.qty += 1;
+        existingItem.subtotal = existingItem.qty * price;
     } else {
-        // Add new item
-        cart.push({
+        cartItems.push({
             sku: sku,
             name: name,
-            price: parseFloat(price),
+            price: price,
             qty: 1,
-            mode: currentMode,
-            stock: stock
+            subtotal: price,
+            mode: currentMode
         });
     }
     
-    renderCart();
+    updateCartDisplay();
 }
 
-// RENDER CART
-function renderCart() {
+// Update tampilan keranjang
+function updateCartDisplay() {
     const cartList = document.getElementById('cartList');
-    const totalDisplay = document.getElementById('totalHarga');
     const cartCount = document.getElementById('cartCount');
+    const totalHarga = document.getElementById('totalHarga');
+    
+    // Update count
+    const totalItems = cartItems.reduce((sum, item) => sum + item.qty, 0);
+    cartCount.textContent = `${totalItems} Item`;
+    
+    // Update cart list
+    if (cartItems.length === 0) {
+        cartList.innerHTML = '<div class="text-center text-muted py-5 bg-light rounded">Belum ada item</div>';
+        totalHarga.textContent = 'Rp0';
+        return;
+    }
     
     let html = '';
     let total = 0;
-
-    cart.forEach((item, index) => {
-        const subtotal = item.price * item.qty;
-        total += subtotal;
-        
-        const badgeClass = item.mode === 'lelang' ? 'badge bg-warning' : 'badge bg-info';
-        const badgeText = item.mode === 'lelang' ? 'LELANG' : 'BIASA';
-        
-        html += '<div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">' +
-                '<div style="flex: 1;">' +
-                '<span class="fw-bold d-block">' + item.name + '</span>' +
-                '<div class="d-flex align-items-center">' +
-                '<small class="text-muted">' + item.qty + ' x Rp' + item.price.toLocaleString() + '</small>' +
-                '<span class="' + badgeClass + ' ms-2 small">' + badgeText + '</span>' +
-                '</div>' +
-                '</div>' +
-                '<div class="text-end" style="min-width: 100px;">' +
-                '<span class="d-block fw-bold ' + (item.mode === 'lelang' ? 'text-danger' : 'text-success') + '">' +
-                'Rp' + subtotal.toLocaleString() + '</span>' +
-                '<i class="bi bi-trash text-danger cursor-pointer" ' +
-                'onclick="removeFromCart(' + index + ')" style="cursor:pointer" title="Hapus"></i>' +
-                '</div>' +
-                '</div>';
-    });
-
-    if (cart.length === 0) {
-        cartList.innerHTML = '<div class="text-center text-muted py-5 bg-light rounded">Belum ada item</div>';
-    } else {
-        cartList.innerHTML = html;
-    }
     
-    totalDisplay.innerText = 'Rp' + total.toLocaleString();
-    cartCount.innerText = cart.length + ' Item';
+    cartItems.forEach((item, index) => {
+        total += item.subtotal;
+        html += `
+            <div class="cart-item border-bottom pb-2 mb-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1">${item.name}</h6>
+                        <small class="text-muted">SKU: ${item.sku}</small>
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-outline-secondary btn-sm" onclick="updateQty(${index}, -1)">-</button>
+                            <span class="mx-2">${item.qty} @Rp${parseInt(item.price).toLocaleString()}</span>
+                            <button class="btn btn-sm btn-outline-secondary btn-sm" onclick="updateQty(${index}, 1)">+</button>
+                            <button class="btn btn-sm btn-outline-danger btn-sm ms-2" onclick="removeFromCart(${index})">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <h6 class="mb-0 text-primary">Rp${parseInt(item.subtotal).toLocaleString()}</h6>
+                        ${item.mode === 'lelang' ? '<small class="text-warning"><i class="bi bi-tag"></i> Lelang</small>' : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    cartList.innerHTML = html;
+    totalHarga.textContent = `Rp${parseInt(total).toLocaleString()}`;
+    
+    // Show/hide lelang info
+    const hasLelang = cartItems.some(item => item.mode === 'lelang');
+    document.getElementById('lelangInfo').classList.toggle('d-none', !hasLelang);
 }
 
-// REMOVE FROM CART
-function removeFromCart(index) {
-    if (index >= 0 && index < cart.length) {
-        cart.splice(index, 1);
-        renderCart();
-    }
-}
-
-// CHECKOUT
-async function checkout() {
-    if (cart.length === 0) {
-        alert("Keranjang masih kosong!");
+// Fungsi update quantity
+function updateQty(index, change) {
+    const item = cartItems[index];
+    const newQty = item.qty + change;
+    
+    if (newQty < 1) {
+        removeFromCart(index);
         return;
     }
-
-    // Check if mixed modes
-    const modes = [];
-    cart.forEach(item => {
-        if (!modes.includes(item.mode)) {
-            modes.push(item.mode);
-        }
-    });
     
-    if (modes.length > 1) {
-        if (!confirm("Keranjang berisi produk biasa dan lelang. Proses terpisah?")) return;
+    item.qty = newQty;
+    item.subtotal = item.qty * item.price;
+    updateCartDisplay();
+}
+
+// Fungsi hapus dari keranjang
+function removeFromCart(index) {
+    cartItems.splice(index, 1);
+    updateCartDisplay();
+}
+
+// Fungsi checkout
+async function checkout() {
+    if (cartItems.length === 0) {
+        alert('Keranjang kosong!');
+        return;
+    }
+    
+    // Pisahkan item biasa dan lelang
+    const biasaItems = cartItems.filter(item => item.mode === 'biasa');
+    const lelangItems = cartItems.filter(item => item.mode === 'lelang');
+    
+    try {
+        // Show loading
+        document.getElementById('loadingSpinner').style.display = 'block';
         
-        // Process biasa first
-        const cartBiasa = cart.filter(item => item.mode === 'biasa');
-        if (cartBiasa.length > 0) {
-            if (!confirm('Proses ' + cartBiasa.length + ' produk biasa terlebih dahulu?')) return;
-            await processCheckout(cartBiasa, 'biasa');
+        if (biasaItems.length > 0) {
+            const response = await fetch('/api/checkout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    items: biasaItems.map(item => ({
+                        sku: item.sku,
+                        qty: item.qty
+                    }))
+                })
+            });
+            
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.message);
+            }
         }
         
-        // Process lelang
-        const cartLelang = cart.filter(item => item.mode === 'lelang');
-        if (cartLelang.length > 0) {
-            if (!confirm('Lanjut proses ' + cartLelang.length + ' produk lelang?')) return;
-            await processCheckout(cartLelang, 'lelang');
+        if (lelangItems.length > 0) {
+            const response = await fetch('/api/checkout_lelang', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    items: lelangItems.map(item => ({
+                        sku: item.sku,
+                        qty: item.qty
+                    }))
+                })
+            });
+            
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.message);
+            }
         }
         
-    } else {
-        // Single mode
-        const mode = modes[0];
-        const modeText = mode === 'lelang' ? 'lelang' : 'biasa';
+        // Reset cart
+        cartItems = [];
+        updateCartDisplay();
+        document.getElementById('query').value = '';
+        searchItem();
         
-        if (!confirm('Proses transaksi ' + modeText + ' sekarang?')) return;
-        await processCheckout(cart, mode);
+        alert('Transaksi berhasil!');
+        
+    } catch (error) {
+        alert('Error: ' + error.message);
+    } finally {
+        document.getElementById('loadingSpinner').style.display = 'none';
     }
 }
 
-// PROCESS CHECKOUT
-async function processCheckout(itemsToCheckout, mode) {
-    try {
-        const endpoint = mode === 'lelang' ? '/api/checkout_lelang' : '/api/checkout';
-        
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: itemsToCheckout })
-        });
+// ============================================
+// ADMIN BARCODE FUNCTIONS
+// ============================================
 
-        const result = await response.json();
-        if (result.success) {
-            alert('✅ Transaksi ' + mode + ' Berhasil!\n' + result.message);
-            
-            // Remove processed items
-            cart = cart.filter(item => !itemsToCheckout.includes(item));
-            renderCart();
-            
-            // Reset search
-            document.getElementById('query').value = "";
-            document.getElementById('searchResults').innerHTML = 
-                '<div class="text-muted text-center py-5 w-100">' +
-                '<i class="bi bi-box-seam fs-1 d-block mb-2"></i>' +
-                'Silakan cari barang</div>';
-                
+// Load produk untuk dropdown barcode
+async function loadProductsForBarcode() {
+    try {
+        const response = await fetch('/api/products/for_barcode');
+        const data = await response.json();
+        
+        const select = document.getElementById('barcodeProductSelect');
+        select.innerHTML = '<option value="">-- Pilih produk --</option>';
+        
+        if (data.success && data.products && data.products.length > 0) {
+            data.products.forEach(product => {
+                const option = document.createElement('option');
+                option.value = product.sku;
+                option.textContent = `${product.name} (SKU: ${product.sku}) - Rp${parseInt(product.price).toLocaleString()}`;
+                option.dataset.product = JSON.stringify(product);
+                select.appendChild(option);
+            });
+            console.log(`✅ Loaded ${data.products.length} products for barcode`);
         } else {
-            alert('❌ Gagal: ' + result.message);
+            console.warn('No products found for barcode');
         }
     } catch (error) {
-        alert("❌ Error sistem! Coba lagi atau hubungi admin.");
-        console.error("Checkout error:", error);
+        console.error('Error loading products for barcode:', error);
+        alert('Gagal memuat daftar produk');
     }
 }
 
-// INITIAL SETUP
+// Update preview barcode
+function updateBarcodePreview() {
+    const select = document.getElementById('barcodeProductSelect');
+    const selectedOption = select.options[select.selectedIndex];
+    
+    if (!selectedOption || !selectedOption.value) {
+        document.getElementById('barcodePreviewArea').style.display = 'none';
+        document.getElementById('printBtn').disabled = true;
+        document.getElementById('downloadBtn').disabled = true;
+        return;
+    }
+    
+    try {
+        const product = JSON.parse(selectedOption.dataset.product);
+        document.getElementById('barcodeProductName').textContent = product.name;
+        document.getElementById('barcodeProductSKU').textContent = `SKU: ${product.sku}`;
+        document.getElementById('barcodePreviewArea').style.display = 'block';
+    } catch (e) {
+        console.error('Error parsing product data:', e);
+    }
+}
+
+// Generate barcode
+async function generateBarcode() {
+    const select = document.getElementById('barcodeProductSelect');
+    const sku = select.value;
+    
+    if (!sku) {
+        alert('Pilih produk terlebih dahulu!');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/barcode/${sku}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('barcodeImage').src = data.barcode;
+            document.getElementById('printBtn').disabled = false;
+            document.getElementById('downloadBtn').disabled = false;
+            alert('Barcode berhasil digenerate!');
+        } else {
+            alert('Error: ' + (data.message || 'Gagal generate barcode'));
+        }
+    } catch (error) {
+        console.error('Error generating barcode:', error);
+        alert('Gagal generate barcode');
+    }
+}
+
+// Print barcode
+function printBarcode() {
+    const sku = document.getElementById('barcodeProductSelect').value;
+    if (sku) {
+        window.open(`/api/print_barcode/${sku}`, '_blank');
+    }
+}
+
+// Download barcode
+function downloadBarcode() {
+    const sku = document.getElementById('barcodeProductSelect').value;
+    if (sku) {
+        window.open(`/api/barcode/${sku}/download`, '_blank');
+    }
+}
+
+// Generate semua barcode
+async function generateAllBarcodes() {
+    if (!confirm('Generate barcode untuk semua produk yang belum punya barcode?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/barcode/generate_all', {
+            method: 'POST'
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(`Berhasil generate ${data.generated} barcode dari ${data.total} produk`);
+            loadProductsForBarcode(); // Refresh list
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error generating all barcodes:', error);
+        alert('Gagal generate semua barcode');
+    }
+}
+
+// View all barcodes
+function viewBarcodeList() {
+    alert('Fitur ini akan menampilkan daftar semua barcode');
+    // Implementasi sesuai kebutuhan
+}
+
+// Check barcode status
+async function checkBarcodeStatus() {
+    try {
+        const response = await fetch('/api/barcode/status');
+        const data = await response.json();
+        
+        if (data.success) {
+            const status = data.status;
+            alert(
+                `Status Barcode:\n\n` +
+                `Total Produk: ${status.total_products}\n` +
+                `Sudah punya barcode: ${status.with_barcode}\n` +
+                `Belum punya barcode: ${status.without_barcode}\n` +
+                `Progress: ${status.progress_percentage}%`
+            );
+        }
+    } catch (error) {
+        console.error('Error checking barcode status:', error);
+    }
+}
+
+// ============================================
+// INITIALIZATION
+// ============================================
+
+// Initialize saat halaman load
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize mode
-    setMode('biasa');
+    // Untuk halaman kasir
+    if (document.getElementById('query')) {
+        console.log('Initializing kasir page...');
+    }
+    
+    // Untuk halaman admin
+    if (document.getElementById('barcodeProductSelect')) {
+        console.log('Initializing admin barcode functions...');
+        loadProductsForBarcode();
+    }
 });

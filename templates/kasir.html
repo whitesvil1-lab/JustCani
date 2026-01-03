@@ -17,6 +17,8 @@
                 </div>
             </div>
             
+            
+            <!-- Input Pencarian & Tombol Scan -->
             <div class="input-group mb-4">
                 <span class="input-group-text bg-white border-end-0">
                     <i class="bi bi-search"></i>
@@ -24,17 +26,73 @@
                 <input type="text" id="query" class="form-control border-start-0 ps-0" 
                        placeholder="Cari nama barang atau SKU..." 
                        onkeyup="searchItem()">
+                <!-- Tombol Scan Barcode -->
+                <button class="btn btn-success" type="button" id="btnScan" onclick="openBarcodeScanner()">
+                    <i class="bi bi-upc-scan"></i> Scan Barcode
+                </button>
             </div>
             
+            <!-- Modal Kamera Barcode -->
+            <div class="modal fade" id="barcodeModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-upc-scan me-2"></i>Scan Barcode
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="stopScanner()"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="text-center">
+                                <!-- Scanner Area -->
+                                <div class="position-relative mb-3">
+                                    <video id="barcodeScanner" width="100%" height="300" style="border: 2px solid #0d6efd; border-radius: 8px; background: #000;"></video>
+                                    <!-- Scanner Guide Lines -->
+                                    <div class="scanner-overlay" style="display: none;"></div>
+                                    <div class="scanner-guide" style="display: none;"></div>
+                                </div>
+                                
+                                <!-- Scan Result -->
+                                <div id="scanResult" class="alert alert-info">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    Klik "Mulai Scan" untuk membuka kamera
+                                </div>
+                                
+                                <!-- Manual Input Barcode -->
+                                <div class="mt-4">
+                                    <label class="form-label">Atau masukkan barcode manual:</label>
+                                    <div class="input-group">
+                                        <input type="text" id="manualBarcode" class="form-control" placeholder="Masukkan kode barcode">
+                                        <button class="btn btn-outline-primary" onclick="manualBarcodeSearch()">
+                                            <i class="bi bi-search"></i> Cari
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="stopScanner()">
+                                <i class="bi bi-x-circle"></i> Tutup
+                            </button>
+                            <button type="button" class="btn btn-primary" onclick="startScanner()" id="startScanBtn">
+                                <i class="bi bi-play-circle"></i> Mulai Scan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Hasil Pencarian -->
             <div id="searchResults" class="row g-2 overflow-auto" style="max-height: 500px;">
                 <div class="text-muted text-center py-5 w-100">
                     <i class="bi bi-box-seam fs-1 d-block mb-2"></i>
-                    Silakan cari barang
+                    Silakan cari barang atau scan barcode
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Keranjang Belanja -->
     <div class="col-md-5">
         <div class="card p-4 h-100 border-0 shadow">
             <div class="d-flex justify-content-between align-items-center mb-4">
@@ -66,5 +124,11 @@
     </div>
 </div>
 
-<!-- JANGAN ADA SCRIPT DI SINI! SEMUA JS SUDAH DI script.js -->
+<!-- Loading Spinner (Hidden by default) -->
+<div id="loadingSpinner" class="position-fixed top-50 start-50 translate-middle" style="display: none; z-index: 9999;">
+    <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+</div>
+
 {% endblock %}

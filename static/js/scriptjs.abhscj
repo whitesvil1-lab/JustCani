@@ -1,0 +1,1094 @@
+// ============================================
+// SISTEM KASIR JUSTCANI - FINAL VERSION
+// ============================================
+
+// VARIABLES
+let cart = [];
+let currentMode = 'biasa';
+let isScanning = false;
+let scanner = null;
+let currentStream = null;
+
+// ============================================
+// 1. MODE MANAGEMENT (BIASA/LELANG)
+// ============================================
+
+// SET MODE (BIASA/LELANG)
+function setMode(mode) {
+    currentMode = mode;
+    
+    // Update button styles
+    const btnBiasa = document.getElementById('btnBiasa');
+    const btnLelang = document.getElementById('btnLelang');
+    
+    if (mode === 'biasa') {
+        btnBiasa.className = 'btn btn-primary';
+        btnLelang.className = 'btn btn-outline-warning';
+    } else {
+        btnBiasa.className = 'btn btn-outline-primary';
+        btnLelang.className = 'btn btn-warning';
+    }
+    
+    // Update cart mode label
+    const cartMode = document.getElementById('cartMode');
+    cartMode.textContent = mode === 'biasa' ? 'Biasa' : 'Lelang';
+    cartMode.className = mode === 'biasa' ? 'badge bg-info ms-2' : 'badge bg-warning ms-2';
+    
+    // Show/hide lelang info
+    const lelangInfo = document.getElementById('lelangInfo');
+    lelangInfo.className = mode === 'lelang' ? 'alert alert-warning mt-3' : 'alert alert-warning mt-3 d-none';
+    
+    // Clear search
+    document.getElementById('query').value = '';
+    document.getElementById('searchResults').innerHTML = 
+        '<div class="text-muted text-center py-5 w-100">' +
+        '<i class="bi bi-box-seam fs-1 d-block mb-2"></i>' +
+        'Silakan cari barang</div>';
+}
+
+// ============================================
+// 2. PRODUCT SEARCH & MANAGEMENT
+// ============================================
+
+// SEARCH PRODUCTS
+async function searchItem() {
+    const query = document.getElementById('query').value.trim();
+    const resultsDiv = document.getElementById('searchResults');
+    
+    if (query.length < 1) {
+        resultsDiv.innerHTML = '<div class="text-muted text-center p-3">Mulai mengetik untuk mencari...</div>';
+        return;
+    }
+
+    showLoading(true);
+    
+    try {
+        const endpoint = currentMode === 'lelang' ? '/api/search_lelang' : '/api/search';
+        const response = await fetch(endpoint + '?q=' + encodeURIComponent(query));
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+
+        let html = '';
+        if (!data || data.length === 0) {
+            html = '<div class="text-danger text-center p-3">' +
+                   '<i class="bi bi-search fs-4 d-block mb-2"></i>' +
+                   'Barang tidak ditemukan.</div>';
+        } else {
+            data.forEach(p => {
+                // FIX: Handle all possible field names
+                const sku = p.no_SKU || p.sku || 'N/A';
+                const name = p.Name_product || p.name || 'Nama tidak tersedia';
+                const price = p.Price || p.price || 0;
+                const stock = p.stok || p.stock || 0;
+                
+                const badgeClass = currentMode === 'lelang' ? 'badge bg-warning' : 'badge bg-primary';
+                const badgeText = currentMode === 'lelang' ? 'LELANG' : 'BIASA';
+                const btnClass = currentMode === 'lelang' ? 'btn btn-warning' : 'btn btn-primary';
+                const btnIcon = currentMode === 'lelang' ? 'bi-tag' : 'bi-plus-lg';
+                const stokText = stock !== undefined ? '| Stok: ' + stock : '';
+                const stokClass = stock > 10 ? 'text-success' : stock > 0 ? 'text-warning' : 'text-danger';
+                
+                // Escape quotes
+                const safeName = name.replace(/'/g, "\\'").replace(/"/g, '\\"');
+                
+                html += '<div class="product-item p-3 mb-2 rounded d-flex justify-content-between align-items-center">' +
+                        '<div>' +
+                        '<span class="d-block fw-bold text-dark">' + name + '</span>' +
+                        '<small class="text-muted">SKU: ' + sku + ' ' + 
+                        '<span class="' + stokClass + '">' + stokText + '</span>' +
+                        '<span class="' + badgeClass + ' ms-2">' + badgeText + '</span></small>' +
+                        '</div>' +
+                        '<div class="text-end">' +
+                        '<span class="d-block fw-bold ' + (currentMode === 'lelang' ? 'text-danger' : 'text-primary') + '">' +
+                        'Rp' + parseInt(price).toLocaleString() + '</span>' +
+                        '<button class="btn ' + btnClass + ' btn-sm mt-1" ' +
+                        'onclick="addToCart(\'' + sku + '\', \'' + safeName + '\', ' + price + ', ' + stock + ')" ' +
+                        (currentMode === 'biasa' && stock <= 0 ? 'disabled' : '') + '>' +
+                        '<i class="bi ' + btnIcon + '"></i> Tambah</button>' +
+                        '</div>' +
+                        '</div>';
+            });
+        }
+        resultsDiv.innerHTML = html;
+    } catch (error) {
+        console.error("Search Error:", error);
+        resultsDiv.innerHTML = '<div class="text-danger text-center p-3">' +
+                              '<i class="bi bi-exclamation-triangle fs-4 d-block mb-2"></i>' +
+                              'Error sistem: ' + error.message + '</div>';
+    } finally {
+        showLoading(false);
+    }
+}
+
+// ============================================
+// 3. CART MANAGEMENT
+// ============================================
+
+// ADD TO CART
+function addToCart(sku, name, price, stock) {
+    // Check stock for regular products
+    if (currentMode === 'biasa' && stock <= 0) {
+        alert("Stok barang ini kosong!");
+        return;
+    }
+    
+    // Find existing item in cart
+    const existingIndex = cart.findIndex(item => item.sku === sku && item.mode === currentMode);
+    
+    if (existingIndex !== -1) {
+        // Increase quantity if exists
+        cart[existingIndex].qty += 1;
+    } else {
+        // Add new item
+        cart.push({
+            sku: sku,
+            name: name,
+            price: parseFloat(price),
+            qty: 1,
+            mode: currentMode,
+            stock: stock
+        });
+    }
+    
+    renderCart();
+    showCartNotification(name);
+}
+
+// RENDER CART
+function renderCart() {
+    const cartList = document.getElementById('cartList');
+    const totalDisplay = document.getElementById('totalHarga');
+    const cartCount = document.getElementById('cartCount');
+    
+    let html = '';
+    let total = 0;
+
+    cart.forEach((item, index) => {
+        const subtotal = item.price * item.qty;
+        total += subtotal;
+        
+        const badgeClass = item.mode === 'lelang' ? 'badge bg-warning' : 'badge bg-info';
+        const badgeText = item.mode === 'lelang' ? 'LELANG' : 'BIASA';
+        
+        html += '<div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">' +
+                '<div style="flex: 1;">' +
+                '<span class="fw-bold d-block">' + item.name + '</span>' +
+                '<div class="d-flex align-items-center mt-1">' +
+                '<button class="btn btn-sm btn-outline-secondary p-0 px-2" onclick="changeQuantity(' + index + ', -1)">-</button>' +
+                '<span class="mx-2">' + item.qty + '</span>' +
+                '<button class="btn btn-sm btn-outline-secondary p-0 px-2" onclick="changeQuantity(' + index + ', 1)">+</button>' +
+                '<small class="text-muted ms-3">@Rp' + item.price.toLocaleString() + '</small>' +
+                '<span class="' + badgeClass + ' ms-2 small">' + badgeText + '</span>' +
+                '</div>' +
+                '</div>' +
+                '<div class="text-end" style="min-width: 100px;">' +
+                '<span class="d-block fw-bold ' + (item.mode === 'lelang' ? 'text-danger' : 'text-success') + '">' +
+                'Rp' + subtotal.toLocaleString() + '</span>' +
+                '<i class="bi bi-trash text-danger cursor-pointer mt-1" ' +
+                'onclick="removeFromCart(' + index + ')" style="cursor:pointer" title="Hapus"></i>' +
+                '</div>' +
+                '</div>';
+    });
+
+    if (cart.length === 0) {
+        cartList.innerHTML = '<div class="text-center text-muted py-5 bg-light rounded">' +
+                            '<i class="bi bi-cart fs-1 d-block mb-2"></i>' +
+                            'Belum ada item</div>';
+    } else {
+        cartList.innerHTML = html;
+    }
+    
+    totalDisplay.innerText = 'Rp' + total.toLocaleString();
+    cartCount.innerText = cart.length + ' Item';
+    
+    // Update cart count badge
+    const cartBadge = document.querySelector('#cartCount');
+    if (cart.length > 0) {
+        cartBadge.classList.remove('bg-secondary');
+        cartBadge.classList.add('bg-danger');
+    } else {
+        cartBadge.classList.remove('bg-danger');
+        cartBadge.classList.add('bg-secondary');
+    }
+}
+
+// CHANGE QUANTITY
+function changeQuantity(index, delta) {
+    if (index >= 0 && index < cart.length) {
+        const newQty = cart[index].qty + delta;
+        
+        if (newQty < 1) {
+            removeFromCart(index);
+            return;
+        }
+        
+        // Check stock for regular products
+        if (cart[index].mode === 'biasa' && newQty > cart[index].stock) {
+            alert("Stok tidak mencukupi! Stok tersedia: " + cart[index].stock);
+            return;
+        }
+        
+        cart[index].qty = newQty;
+        renderCart();
+    }
+}
+
+// REMOVE FROM CART
+function removeFromCart(index) {
+    if (index >= 0 && index < cart.length) {
+        const itemName = cart[index].name;
+        cart.splice(index, 1);
+        renderCart();
+        
+        // Show removal notification
+        showNotification(itemName + ' dihapus dari keranjang', 'danger');
+    }
+}
+
+// SHOW CART NOTIFICATION
+function showCartNotification(productName) {
+    showNotification(productName + ' ditambahkan ke keranjang', 'success');
+}
+
+// SHOW NOTIFICATION
+function showNotification(message, type = 'info') {
+    // Remove existing notification
+    const existingNotif = document.querySelector('.cart-notification');
+    if (existingNotif) existingNotif.remove();
+    
+    // Create new notification
+    const notif = document.createElement('div');
+    notif.className = `cart-notification alert alert-${type} alert-dismissible fade show position-fixed`;
+    notif.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 300px;';
+    notif.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
+    `;
+    
+    document.body.appendChild(notif);
+    
+    // Auto remove after 3 seconds
+    setTimeout(() => {
+        if (notif.parentElement) notif.remove();
+    }, 3000);
+}
+
+// ============================================
+// 4. CHECKOUT PROCESS
+// ============================================
+
+// CHECKOUT
+async function checkout() {
+    if (cart.length === 0) {
+        alert("Keranjang masih kosong!");
+        return;
+    }
+
+    // Check if mixed modes
+    const modes = [];
+    cart.forEach(item => {
+        if (!modes.includes(item.mode)) {
+            modes.push(item.mode);
+        }
+    });
+    
+    if (modes.length > 1) {
+        if (!confirm("Keranjang berisi produk biasa dan lelang. Proses terpisah?")) return;
+        
+        // Process biasa first
+        const cartBiasa = cart.filter(item => item.mode === 'biasa');
+        if (cartBiasa.length > 0) {
+            if (!confirm('Proses ' + cartBiasa.length + ' produk biasa terlebih dahulu?')) return;
+            await processCheckout(cartBiasa, 'biasa');
+        }
+        
+        // Process lelang
+        const cartLelang = cart.filter(item => item.mode === 'lelang');
+        if (cartLelang.length > 0) {
+            if (!confirm('Lanjut proses ' + cartLelang.length + ' produk lelang?')) return;
+            await processCheckout(cartLelang, 'lelang');
+        }
+        
+    } else {
+        // Single mode
+        const mode = modes[0];
+        const modeText = mode === 'lelang' ? 'lelang' : 'biasa';
+        
+        if (!confirm('Proses transaksi ' + modeText + ' sekarang?')) return;
+        await processCheckout(cart, mode);
+    }
+}
+
+// PROCESS CHECKOUT
+async function processCheckout(itemsToCheckout, mode) {
+    showLoading(true);
+    
+    try {
+        const endpoint = mode === 'lelang' ? '/api/checkout_lelang' : '/api/checkout';
+        
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: itemsToCheckout })
+        });
+
+        const result = await response.json();
+        if (result.success) {
+            // Show success notification
+            showNotification('✅ Transaksi ' + mode + ' berhasil! Total: Rp' + 
+                           result.total?.toLocaleString() || '', 'success');
+            
+            // Remove processed items
+            cart = cart.filter(item => !itemsToCheckout.includes(item));
+            renderCart();
+            
+            // Reset search
+            document.getElementById('query').value = "";
+            document.getElementById('searchResults').innerHTML = 
+                '<div class="text-muted text-center py-5 w-100">' +
+                '<i class="bi bi-box-seam fs-1 d-block mb-2"></i>' +
+                'Silakan cari barang</div>';
+                
+        } else {
+            showNotification('❌ Gagal: ' + result.message, 'danger');
+        }
+    } catch (error) {
+        showNotification("❌ Error sistem! Coba lagi atau hubungi admin.", 'danger');
+        console.error("Checkout error:", error);
+    } finally {
+        showLoading(false);
+    }
+}
+
+// ============================================
+// 5. BARCODE SCANNER FUNCTIONS
+// ============================================
+
+// OPEN BARCODE SCANNER MODAL
+function openBarcodeScanner() {
+    const modal = new bootstrap.Modal(document.getElementById('barcodeModal'));
+    modal.show();
+}
+
+// START SCANNER
+async function startScanner() {
+    if (isScanning) return;
+    
+    const video = document.getElementById('barcodeScanner');
+    const resultDiv = document.getElementById('scanResult');
+    const startBtn = document.getElementById('startScanBtn');
+    
+    // Reset UI
+    resultDiv.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"></div> Memuat kamera...';
+    startBtn.disabled = true;
+    startBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Loading...';
+    
+    // Cek apakah browser support getUserMedia
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        resultDiv.innerHTML = '<div class="alert alert-danger">Browser tidak mendukung akses kamera</div>';
+        startBtn.disabled = false;
+        startBtn.innerHTML = '<i class="bi bi-play-circle"></i> Mulai Scan';
+        return;
+    }
+    
+    try {
+        // Akses kamera
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                facingMode: 'environment',
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            } 
+        });
+        
+        currentStream = stream;
+        video.srcObject = stream;
+        video.play();
+        isScanning = true;
+        
+        // Show scanner guides
+        document.querySelector('.scanner-overlay').style.display = 'block';
+        document.querySelector('.scanner-guide').style.display = 'block';
+        
+        resultDiv.innerHTML = '<div class="alert alert-info">' +
+                             '<i class="bi bi-upc-scan me-2"></i>' +
+                             'Arahkan kamera ke barcode produk...</div>';
+        
+        startBtn.innerHTML = '<i class="bi bi-stop-circle"></i> Stop Scan';
+        startBtn.onclick = stopScanner;
+        startBtn.disabled = false;
+        
+        // Load barcode scanner library
+        await loadBarcodeScanner(video, resultDiv);
+        
+    } catch (err) {
+        console.error("Error accessing camera:", err);
+        resultDiv.innerHTML = '<div class="alert alert-danger">' +
+                             '<i class="bi bi-exclamation-triangle me-2"></i>' +
+                             'Gagal mengakses kamera: ' + (err.message || 'Izin kamera ditolak') + '</div>';
+        startBtn.disabled = false;
+        startBtn.innerHTML = '<i class="bi bi-play-circle"></i> Mulai Scan';
+    }
+}
+
+// LOAD BARCODE SCANNER LIBRARY
+async function loadBarcodeScanner(video, resultDiv) {
+    // Check if Quagga is already loaded
+    if (typeof Quagga !== 'undefined') {
+        initializeQuagga(video, resultDiv);
+        return;
+    }
+    
+    // Load QuaggaJS from CDN
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js';
+        
+        script.onload = () => {
+            initializeQuagga(video, resultDiv);
+            resolve();
+        };
+        
+        script.onerror = () => {
+            resultDiv.innerHTML = '<div class="alert alert-danger">' +
+                                 'Gagal memuat library scanner. Periksa koneksi internet.</div>';
+            reject(new Error('Failed to load QuaggaJS'));
+        };
+        
+        document.head.appendChild(script);
+    });
+}
+
+// INITIALIZE QUAGGA BARCODE SCANNER
+function initializeQuagga(video, resultDiv) {
+    if (typeof Quagga === 'undefined') {
+        resultDiv.innerHTML = '<div class="alert alert-danger">Library scanner tidak tersedia</div>';
+        return;
+    }
+    
+    Quagga.init({
+        inputStream: {
+            name: "Live",
+            type: "LiveStream",
+            target: video,
+            constraints: {
+                facingMode: "environment",
+                width: 640,
+                height: 480
+            },
+        },
+        decoder: {
+            readers: [
+                "code_128_reader",
+                "ean_reader",
+                "ean_8_reader",
+                "code_39_reader",
+                "upc_reader",
+                "upc_e_reader"
+            ]
+        },
+        locate: true,
+        frequency: 10
+    }, function(err) {
+        if (err) {
+            console.error("Quagga init error:", err);
+            resultDiv.innerHTML = '<div class="alert alert-danger">Gagal inisialisasi scanner</div>';
+            return;
+        }
+        
+        resultDiv.innerHTML = '<div class="alert alert-success">' +
+                             '<i class="bi bi-check-circle me-2"></i>' +
+                             'Scanner siap! Arahkan ke barcode...</div>';
+        
+        Quagga.start();
+        
+        // Set scanner reference
+        scanner = Quagga;
+    });
+    
+    // Barcode detection handler
+    Quagga.onDetected(function(result) {
+        const code = result.codeResult.code;
+        
+        // Validate barcode
+        if (!code || code.length < 1) return;
+        
+        // Show success
+        const resultDiv = document.getElementById('scanResult');
+        resultDiv.innerHTML = `<div class="alert alert-success">
+            <i class="bi bi-check-circle me-2"></i>
+            Barcode terdeteksi: <strong>${code}</strong>
+        </div>`;
+        
+        // Stop scanner
+        stopScanner();
+        
+        // Auto close modal after 1 second and search
+        setTimeout(() => {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('barcodeModal'));
+            if (modal) modal.hide();
+            
+            // Search product by barcode
+            searchByBarcode(code);
+        }, 1000);
+    });
+}
+
+// STOP SCANNER
+function stopScanner() {
+    if (scanner) {
+        scanner.stop();
+        scanner = null;
+    }
+    
+    if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+    }
+    
+    isScanning = false;
+    
+    // Reset UI
+    const video = document.getElementById('barcodeScanner');
+    video.srcObject = null;
+    
+    document.querySelector('.scanner-overlay').style.display = 'none';
+    document.querySelector('.scanner-guide').style.display = 'none';
+    
+    const startBtn = document.getElementById('startScanBtn');
+    startBtn.innerHTML = '<i class="bi bi-play-circle"></i> Mulai Scan';
+    startBtn.onclick = startScanner;
+    startBtn.disabled = false;
+}
+
+// SEARCH PRODUCT BY BARCODE
+function searchByBarcode(barcode) {
+    // Clean barcode input
+    barcode = barcode.toString().trim();
+    
+    // Set query and trigger search
+    document.getElementById('query').value = barcode;
+    
+    // Show loading
+    document.getElementById('searchResults').innerHTML = 
+        '<div class="text-center py-5">' +
+        '<div class="spinner-border text-primary" role="status"></div>' +
+        '<p class="mt-2 text-muted">Mencari produk dengan barcode: ' + barcode + '</p>' +
+        '</div>';
+    
+    // First try normal search
+    setTimeout(async () => {
+        try {
+            // Try regular search
+            await searchItem();
+            
+            // If search returns nothing, try direct lookup
+            const resultsDiv = document.getElementById('searchResults');
+            if (resultsDiv.innerHTML.includes('tidak ditemukan') || 
+                resultsDiv.innerHTML.includes('Barang tidak ditemukan')) {
+                
+                // Try direct API call
+                const response = await fetch('/api/search?q=' + encodeURIComponent(barcode));
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    await autoAddToCart(barcode);
+                }
+            } else {
+                // Search successful, try auto-add
+                await autoAddToCart(barcode);
+            }
+        } catch (error) {
+            console.error("Barcode search error:", error);
+        }
+    }, 500);
+}
+
+// MANUAL BARCODE SEARCH
+function manualBarcodeSearch() {
+    const barcode = document.getElementById('manualBarcode').value.trim();
+    if (!barcode) {
+        alert('Masukkan kode barcode terlebih dahulu');
+        return;
+    }
+    
+    const modal = bootstrap.Modal.getInstance(document.getElementById('barcodeModal'));
+    if (modal) modal.hide();
+    
+    searchByBarcode(barcode);
+}
+
+
+
+async function autoAddToCart(barcode) {
+    try {
+        // Try both endpoints
+        let response = await fetch('/api/search?q=' + encodeURIComponent(barcode));
+        let data = await response.json();
+        
+        // If not found in regular products, try auction
+        if (!data || data.length === 0) {
+            response = await fetch('/api/search_lelang?q=' + encodeURIComponent(barcode));
+            data = await response.json();
+        }
+        
+        if (data && data.length > 0) {
+            const product = data[0];
+            const sku = product.no_SKU || product.sku;
+            const name = product.Name_product || product.name;
+            const price = product.Price || product.price;
+            const stock = product.stok || product.stock || 0;
+            
+            // Auto add to cart
+            addToCart(sku, name, price, stock);
+            
+            // Show success
+            const resultsDiv = document.getElementById('searchResults');
+            resultsDiv.innerHTML = `
+                <div class="alert alert-success mb-3">
+                    <i class="bi bi-check-circle me-2"></i>
+                    Produk ditambahkan ke keranjang!
+                </div>
+                <div class="product-item p-3 mb-2 rounded d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="d-block fw-bold text-dark">${name}</span>
+                        <small class="text-muted">SKU: ${sku}</small>
+                    </div>
+                    <div class="text-end">
+                        <span class="d-block fw-bold text-primary">Rp${parseInt(price).toLocaleString()}</span>
+                        <span class="badge bg-success">✓ Ditambahkan</span>
+                    </div>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error("Error auto add to cart:", error);
+    }
+}
+
+// ============================================
+// 6. UTILITY FUNCTIONS
+// ============================================
+
+// SHOW/HIDE LOADING SPINNER
+function showLoading(show) {
+    const spinner = document.getElementById('loadingSpinner');
+    if (spinner) {
+        spinner.style.display = show ? 'block' : 'none';
+    }
+}
+
+// CLEAR CART
+function clearCart() {
+    if (cart.length === 0) return;
+    
+    if (confirm('Kosongkan keranjang?')) {
+        cart = [];
+        renderCart();
+        showNotification('Keranjang dikosongkan', 'info');
+    }
+}
+
+// KEYBOARD SHORTCUTS
+document.addEventListener('keydown', function(e) {
+    // F1 = Focus search
+    if (e.key === 'F1' || (e.ctrlKey && e.key === 'k')) {
+        e.preventDefault();
+        document.getElementById('query').focus();
+    }
+    
+    // F2 = Switch to biasa
+    if (e.key === 'F2') {
+        e.preventDefault();
+        setMode('biasa');
+    }
+    
+    // F3 = Switch to lelang
+    if (e.key === 'F3') {
+        e.preventDefault();
+        setMode('lelang');
+    }
+    
+    // F8 = Checkout
+    if (e.key === 'F8') {
+        e.preventDefault();
+        checkout();
+    }
+    
+    // ESC = Clear search
+    if (e.key === 'Escape') {
+        document.getElementById('query').value = '';
+        searchItem();
+    }
+});
+
+// MODAL CLOSE HANDLER
+document.getElementById('barcodeModal')?.addEventListener('hidden.bs.modal', function() {
+    stopScanner();
+});
+
+// Fungsi untuk load daftar produk ke dropdown
+function loadProductsForBarcode() {
+    // API endpoint yang benar
+    fetch('/api/products/for_barcode')
+        .then(response => {
+            if (!response.ok) throw new Error('Network response was not ok');
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                const selectElement = document.getElementById('productSelect');
+                if (selectElement) {
+                    selectElement.innerHTML = '<option value="">- Pilih produk -</option>';
+                    data.products.forEach(product => {
+                        const option = document.createElement('option');
+                        option.value = product.sku || product.no_SKU;
+                        option.textContent = `${product.name || product.Name_product} (SKU: ${product.sku || product.no_SKU})`;
+                        selectElement.appendChild(option);
+                    });
+                }
+            }
+        })
+        .catch(error => console.error('Error loading products:', error));
+}
+
+// Fungsi untuk generate barcode single
+function generateSingleBarcode() {
+    const sku = document.getElementById('productSelect').value;
+    if (!sku) {
+        alert('Pilih produk terlebih dahulu');
+        return;
+    }
+    
+    const generateBtn = document.getElementById('generateBtn');
+    generateBtn.disabled = true;
+    generateBtn.innerHTML = 'Generating...';
+    
+    fetch(`/api/barcode/${sku}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Tampilkan barcode
+                const barcodeImg = document.getElementById('barcodeImage');
+                if (barcodeImg) {
+                    barcodeImg.src = data.barcode;
+                    barcodeImg.style.display = 'block';
+                }
+                
+                // Update status
+                loadBarcodeStatus();
+                alert(`Barcode berhasil digenerate${data.cached ? ' (dari cache)' : ''}`);
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('Error: ' + error.message);
+        })
+        .finally(() => {
+            generateBtn.disabled = false;
+            generateBtn.innerHTML = 'Generate Barcode';
+        });
+}
+
+// Fungsi untuk generate semua barcode yang hilang
+function generateAllMissingBarcodes() {
+    if (!confirm('Generate barcode untuk semua produk yang belum memiliki barcode?')) {
+        return;
+    }
+    
+    const generateAllBtn = document.getElementById('generateAllBtn');
+    generateAllBtn.disabled = true;
+    generateAllBtn.innerHTML = 'Processing...';
+    
+    fetch('/api/barcode/generate_all', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            loadBarcodeStatus();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error.message);
+    })
+    .finally(() => {
+        generateAllBtn.disabled = false;
+        generateAllBtn.innerHTML = 'Generate All Missing Barcodes';
+    });
+}
+
+// Fungsi untuk cek status barcode
+function loadBarcodeStatus() {
+    fetch('/api/barcode/status')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const statusElement = document.getElementById('barcodeStatus');
+                if (statusElement) {
+                    const status = data.status;
+                    statusElement.innerHTML = `
+                        <div class="status-info">
+                            <p>Total Produk: ${status.total_products}</p>
+                            <p>Sudah ada barcode: ${status.with_barcode}</p>
+                            <p>Belum ada barcode: ${status.without_barcode}</p>
+                            <p>Progress: ${status.progress_percentage}%</p>
+                        </div>
+                    `;
+                }
+            }
+        })
+        .catch(error => console.error('Error loading barcode status:', error));
+}
+
+// Load saat halaman terbuka
+document.addEventListener('DOMContentLoaded', function() {
+    loadProductsForBarcode();
+    loadBarcodeStatus();
+});
+
+// INITIAL SETUP
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize mode
+    setMode('biasa');
+    
+    // Set today's date as default for expired date (if any)
+    const today = new Date().toISOString().split('T')[0];
+    document.querySelectorAll('input[type="date"]').forEach(input => {
+        if (!input.value) input.value = today;
+    });
+    
+    console.log('JustCani Kasir System Ready 🚀');
+});
+
+// ================================================
+// BARCODE FUNCTIONS FOR ADMIN PANEL
+// ================================================
+
+// Load products into dropdown
+async function loadProductsForBarcodeDropdown() {
+    try {
+        const response = await fetch('/api/products/for_barcode');
+        const data = await response.json();
+        
+        const selectElement = document.getElementById('barcodeProductSelect');
+        selectElement.innerHTML = '<option value="">-- Pilih produk --</option>';
+        
+        if (data.success && data.products.length > 0) {
+            data.products.forEach(product => {
+                const option = document.createElement('option');
+                option.value = product.sku;
+                option.textContent = `${product.name} (SKU: ${product.sku}) - Rp${product.price}`;
+                option.dataset.price = product.price;
+                option.dataset.name = product.name;
+                option.dataset.hasBarcode = product.has_barcode;
+                selectElement.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading products:', error);
+    }
+}
+
+// Update barcode preview
+function updateBarcodePreview() {
+    const selectElement = document.getElementById('barcodeProductSelect');
+    const selectedOption = selectElement.options[selectElement.selectedIndex];
+    const previewArea = document.getElementById('barcodePreviewArea');
+    
+    if (selectedOption.value) {
+        previewArea.style.display = 'block';
+        document.getElementById('barcodeProductName').textContent = selectedOption.dataset.name;
+        document.getElementById('barcodeProductSKU').textContent = `SKU: ${selectedOption.value}`;
+        
+        // Enable/disable buttons
+        const hasBarcode = selectedOption.dataset.hasBarcode === '1';
+        document.getElementById('printBtn').disabled = !hasBarcode;
+        document.getElementById('downloadBtn').disabled = !hasBarcode;
+        
+        // Load barcode image if exists
+        if (hasBarcode) {
+            fetch(`/api/barcode/${selectedOption.value}/image`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('barcodeImage').src = data.barcode;
+                    }
+                });
+        }
+    } else {
+        previewArea.style.display = 'none';
+    }
+}
+
+// Generate barcode for selected product
+async function generateBarcode() {
+    const selectElement = document.getElementById('barcodeProductSelect');
+    const sku = selectElement.value;
+    
+    if (!sku) {
+        alert('Pilih produk terlebih dahulu!');
+        return;
+    }
+    
+    try {
+        // Show loading
+        const btn = document.querySelector('#barcodePreviewArea + .d-grid .btn-success');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Generating...';
+        btn.disabled = true;
+        
+        // Generate barcode
+        const response = await fetch(`/api/barcode/${sku}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            // Update UI
+            document.getElementById('barcodeImage').src = data.barcode;
+            selectElement.options[selectElement.selectedIndex].dataset.hasBarcode = '1';
+            document.getElementById('printBtn').disabled = false;
+            document.getElementById('downloadBtn').disabled = false;
+            alert('Barcode berhasil digenerate!');
+        } else {
+            alert('Error: ' + data.message);
+        }
+    } catch (error) {
+        alert('Gagal generate barcode!');
+        console.error(error);
+    } finally {
+        // Restore button
+        const btn = document.querySelector('#barcodePreviewArea + .d-grid .btn-success');
+        btn.innerHTML = '<i class="bi bi-magic me-1"></i> Generate Barcode';
+        btn.disabled = false;
+    }
+}
+
+// Print barcode label
+function printBarcode() {
+    const sku = document.getElementById('barcodeProductSelect').value;
+    if (!sku) {
+        alert('Pilih produk terlebih dahulu!');
+        return;
+    }
+    window.open(`/api/print_barcode/${sku}`, '_blank');
+}
+
+// Download barcode as PNG
+function downloadBarcode() {
+    const sku = document.getElementById('barcodeProductSelect').value;
+    if (!sku) {
+        alert('Pilih produk terlebih dahulu!');
+        return;
+    }
+    window.location.href = `/api/barcode/${sku}/download`;
+}
+
+// Generate all missing barcodes
+async function generateAllBarcodes() {
+    if (!confirm('Generate barcode untuk SEMUA produk yang belum memiliki barcode?')) {
+        return;
+    }
+    
+    try {
+        // Get products without barcode
+        const response = await fetch('/api/products/without_barcode');
+        const products = await response.json();
+        
+        if (products.length === 0) {
+            alert('Semua produk sudah memiliki barcode!');
+            return;
+        }
+        
+        // Setup progress
+        const progressBar = document.getElementById('batchProgress');
+        const statusText = document.getElementById('batchStatus');
+        const progressText = document.getElementById('batchProgressText');
+        
+        statusText.textContent = 'Processing...';
+        progressBar.style.width = '0%';
+        
+        let success = 0;
+        let failed = 0;
+        
+        // Process each product
+        for (let i = 0; i < products.length; i++) {
+            const product = products[i];
+            
+            // Update progress
+            const progress = Math.round(((i + 1) / products.length) * 100);
+            progressBar.style.width = `${progress}%`;
+            progressText.textContent = `${i + 1}/${products.length}`;
+            
+            try {
+                const barcodeResponse = await fetch(`/api/barcode/${product.no_SKU}`);
+                const barcodeData = await barcodeResponse.json();
+                
+                if (barcodeData.success) success++;
+                else failed++;
+                
+                // Small delay
+                await new Promise(resolve => setTimeout(resolve, 100));
+            } catch {
+                failed++;
+            }
+        }
+        
+        // Finalize
+        progressBar.className = failed > 0 ? 'progress-bar bg-danger' : 'progress-bar bg-success';
+        statusText.textContent = `Selesai: ${success} berhasil, ${failed} gagal`;
+        
+        // Reload product list
+        loadProductsForBarcodeDropdown();
+        
+        alert(`Batch generate selesai!\nBerhasil: ${success}\nGagal: ${failed}`);
+        
+    } catch (error) {
+        alert('Gagal batch generate!');
+        console.error(error);
+    }
+}
+
+// View barcode list
+function viewBarcodeList() {
+    alert('Fitur akan datang!');
+}
+
+// Check barcode status
+async function checkBarcodeStatus() {
+    try {
+        const response = await fetch('/api/barcode/status');
+        const data = await response.json();
+        
+        if (data.success) {
+            const status = data.status;
+            const progressBar = document.getElementById('batchProgress');
+            const statusText = document.getElementById('batchStatus');
+            const progressText = document.getElementById('batchProgressText');
+            
+            progressBar.style.width = `${status.progress_percentage}%`;
+            progressBar.className = status.progress_percentage === 100 ? 
+                'progress-bar bg-success' : 'progress-bar bg-warning';
+            
+            statusText.textContent = `${status.with_barcode}/${status.total_products} produk memiliki barcode`;
+            progressText.textContent = `${status.with_barcode}/${status.total_products}`;
+            
+            alert(`Status Barcode:\nTotal: ${status.total_products}\nSudah ada: ${status.with_barcode}\nBelum ada: ${status.without_barcode}\nProgress: ${status.progress_percentage}%`);
+        }
+    } catch (error) {
+        console.error('Error checking status:', error);
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadProductsForBarcodeDropdown();
+    checkBarcodeStatus();
+});
