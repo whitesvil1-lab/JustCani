@@ -29,7 +29,13 @@
         <div class="card border-success">
             <div class="card-body">
                 <h6 class="card-subtitle mb-2 text-muted">Pendapatan Hari Ini</h6>
-                <h4 class="card-title">Rp{{ "%.0f"|format(daily_summary.total_revenue) if daily_summary and daily_summary.total_revenue else 0 }}</h4>
+                <h4 class="card-title">
+                    {% if daily_summary and daily_summary.total_revenue %}
+                        Rp{{ "%.0f"|format(daily_summary.total_revenue) }}
+                    {% else %}
+                        Rp0
+                    {% endif %}
+                </h4>
                 <p class="card-text small">Total Revenue</p>
             </div>
         </div>
@@ -75,16 +81,34 @@
     </div>
 </div>
 
+<!-- Debug Info (Hanya untuk admin) -->
+{% if session.get('role') == 'admin' %}
+<div class="alert alert-info mb-4">
+    <i class="bi bi-info-circle me-2"></i>
+    <strong>Info Debug:</strong> 
+    <a href="/api/debug_db" target="_blank" class="text-decoration-none">Cek Status Database</a> | 
+    Total Data: {{ transactions|length if transactions else 0 }} transaksi
+</div>
+{% endif %}
+
 <!-- Transactions Table -->
 <div class="card">
     <div class="card-header bg-dark text-white">
         <h5 class="mb-0">
             <i class="bi bi-receipt me-2"></i>Daftar Transaksi
-            <span class="badge bg-light text-dark ms-2">{{ transactions|length }} transaksi</span>
+            <span class="badge bg-light text-dark ms-2">{{ transactions|length if transactions else 0 }} transaksi</span>
         </h5>
     </div>
     <div class="card-body">
-        {% if transactions and transactions|length > 0 %}
+        <!-- Tampilkan error jika ada -->
+        {% if error %}
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <strong>Error:</strong> {{ error }}
+        </div>
+        {% endif %}
+        
+        {% if transactions is defined and transactions|length > 0 %}
         <div class="table-responsive">
             <table class="table table-hover" id="transactionTable">
                 <thead>
@@ -102,22 +126,43 @@
                     {% for trx in transactions %}
                     <tr>
                         <td>
-                            <span class="badge bg-secondary">{{ trx.transaction_id }}</span>
+                            <span class="badge bg-secondary">{{ trx.transaction_id if trx.transaction_id else 'TRX-' + trx.id|string if trx.id else 'N/A' }}</span>
                         </td>
-                        <td>{{ trx.transaction_date.strftime('%d/%m/%Y %H:%M') if trx.transaction_date else '' }}</td>
-                        <td>{{ trx.username }}</td>
                         <td>
-                            {% if trx.transaction_type == 'biasa' %}
-                            <span class="badge bg-info">Biasa</span>
+                            {% if trx.transaction_date %}
+                                {% if trx.transaction_date is string %}
+                                    {{ trx.transaction_date[:16] }}
+                                {% elif trx.transaction_date is mapping %}
+                                    {{ trx.transaction_date.strftime('%d/%m/%Y %H:%M') if hasattr(trx.transaction_date, 'strftime') else trx.transaction_date[:16] }}
+                                {% else %}
+                                    {{ trx.transaction_date.strftime('%d/%m/%Y %H:%M') }}
+                                {% endif %}
                             {% else %}
-                            <span class="badge bg-warning">Lelang</span>
+                                N/A
                             {% endif %}
                         </td>
-                        <td>{{ trx.items_count }} item</td>
-                        <td class="fw-bold">Rp{{ "%.0f"|format(trx.total_amount) if trx.total_amount else 0 }}</td>
+                        <td>{{ trx.username if trx.username else 'N/A' }}</td>
+                        <td>
+                            {% set trx_type = trx.transaction_type|default('biasa') %}
+                            {% if trx_type == 'biasa' %}
+                            <span class="badge bg-info">Biasa</span>
+                            {% elif trx_type == 'lelang' %}
+                            <span class="badge bg-warning">Lelang</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ trx_type }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ trx.items_count if trx.items_count else 0 }} item</td>
+                        <td class="fw-bold">
+                            {% if trx.total_amount %}
+                                Rp{{ "{:,.0f}".format(trx.total_amount) }}
+                            {% else %}
+                                Rp0
+                            {% endif %}
+                        </td>
                         <td>
                             <button class="btn btn-sm btn-outline-primary" 
-                                    onclick="showTransactionDetail('{{ trx.id }}')">
+                                    onclick="showTransactionDetail('{{ trx.id if trx.id else 0 }}')">
                                 <i class="bi bi-eye"></i> Detail
                             </button>
                         </td>
@@ -131,6 +176,17 @@
             <i class="bi bi-receipt-cutoff fs-1 text-muted d-block mb-3"></i>
             <h5 class="text-muted">Belum ada transaksi</h5>
             <p class="text-muted">Transaksi akan muncul di sini setelah terjadi penjualan</p>
+            
+            {% if session.get('role') == 'admin' %}
+            <div class="mt-3">
+                <button class="btn btn-sm btn-outline-primary" onclick="createTestTransaction()">
+                    <i class="bi bi-plus-circle"></i> Buat Data Test
+                </button>
+                <button class="btn btn-sm btn-outline-secondary ms-2" onclick="refreshPage()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+            {% endif %}
         </div>
         {% endif %}
     </div>
@@ -147,6 +203,9 @@
             <div class="modal-body" id="transactionDetailContent">
                 Loading...
             </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+            </div>
         </div>
     </div>
 </div>
@@ -155,77 +214,146 @@
 // Show transaction details in modal
 async function showTransactionDetail(transactionId) {
     try {
+        // Show loading
+        document.getElementById('transactionDetailContent').innerHTML = `
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Memuat detail transaksi...</p>
+            </div>
+        `;
+        
+        const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+        modal.show();
+        
         const response = await fetch(`/api/transaction/${transactionId}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const data = await response.json();
+        
+        if (data.error) {
+            document.getElementById('transactionDetailContent').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Error:</strong> ${data.error}
+                </div>
+            `;
+            return;
+        }
         
         let html = `
             <div class="row">
                 <div class="col-md-6">
-                    <p><strong>ID Transaksi:</strong> ${data.transaction_id}</p>
-                    <p><strong>Tanggal:</strong> ${new Date(data.transaction_date).toLocaleString()}</p>
-                    <p><strong>Kasir:</strong> ${data.username}</p>
+                    <p><strong>ID Transaksi:</strong> <span class="badge bg-primary">${data.transaction_id || 'N/A'}</span></p>
+                    <p><strong>Tanggal:</strong> ${formatDateTime(data.transaction_date)}</p>
+                    <p><strong>Kasir:</strong> ${data.username || 'N/A'}</p>
                 </div>
                 <div class="col-md-6">
                     <p><strong>Jenis:</strong> 
                         <span class="badge ${data.transaction_type === 'biasa' ? 'bg-info' : 'bg-warning'}">
-                            ${data.transaction_type.toUpperCase()}
+                            ${(data.transaction_type || 'N/A').toUpperCase()}
                         </span>
                     </p>
                     <p><strong>Metode Bayar:</strong> ${data.payment_method || 'Cash'}</p>
-                    <p><strong>Total Item:</strong> ${data.items_count}</p>
+                    <p><strong>Total Item:</strong> ${data.items_count || 0}</p>
                 </div>
             </div>
             
             <hr>
-            <h6 class="fw-bold mb-3">Detail Barang:</h6>
-            <div class="table-responsive">
-                <table class="table table-sm">
-                    <thead>
-                        <tr>
-                            <th>SKU</th>
-                            <th>Nama Barang</th>
-                            <th>Qty</th>
-                            <th>Harga Satuan</th>
-                            <th>Subtotal</th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
+            <h6 class="fw-bold mb-3">Detail Barang:</h6>`;
         
         // Parse details JSON
         try {
-            const items = JSON.parse(data.details);
-            items.forEach(item => {
+            let items = [];
+            if (data.details) {
+                if (typeof data.details === 'string') {
+                    items = JSON.parse(data.details);
+                } else {
+                    items = data.details;
+                }
+            }
+            
+            if (items.length === 0) {
+                html += `<div class="alert alert-warning">Tidak ada detail barang</div>`;
+            } else {
                 html += `
-                    <tr>
-                        <td>${item.sku || item.no_SKU || 'N/A'}</td>
-                        <td>${item.name || item.Name_product || 'N/A'}</td>
-                        <td>${item.qty || 1}</td>
-                        <td>Rp${parseInt(item.price || item.Price || 0).toLocaleString()}</td>
-                        <td class="fw-bold">Rp${parseInt(item.subtotal || item.Price * (item.qty || 1) || 0).toLocaleString()}</td>
-                    </tr>`;
-            });
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>SKU</th>
+                                <th>Nama Barang</th>
+                                <th>Qty</th>
+                                <th>Harga Satuan</th>
+                                <th>Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+                
+                let total = 0;
+                items.forEach(item => {
+                    const sku = item.sku || item.no_SKU || 'N/A';
+                    const name = item.name || item.Name_product || 'N/A';
+                    const qty = item.qty || 1;
+                    const price = item.price || item.Price || 0;
+                    const subtotal = item.subtotal || (price * qty) || 0;
+                    total += subtotal;
+                    
+                    html += `
+                        <tr>
+                            <td><span class="badge bg-secondary">${sku}</span></td>
+                            <td>${name}</td>
+                            <td>${qty}</td>
+                            <td>Rp${parseInt(price).toLocaleString()}</td>
+                            <td class="fw-bold">Rp${parseInt(subtotal).toLocaleString()}</td>
+                        </tr>`;
+                });
+                
+                html += `
+                        </tbody>
+                        <tfoot>
+                            <tr class="table-primary">
+                                <td colspan="4" class="text-end fw-bold">TOTAL:</td>
+                                <td class="fw-bold">Rp${parseInt(total).toLocaleString()}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>`;
+            }
         } catch (e) {
-            html += `<tr><td colspan="5" class="text-center">Data detail tidak dapat ditampilkan</td></tr>`;
+            console.error('Error parsing details:', e);
+            html += `<div class="alert alert-danger">Error memuat detail transaksi: ${e.message}</div>`;
         }
         
-        html += `
-                    </tbody>
-                    <tfoot>
-                        <tr class="table-primary">
-                            <td colspan="4" class="text-end fw-bold">TOTAL:</td>
-                            <td class="fw-bold">Rp${parseInt(data.total_amount || 0).toLocaleString()}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>`;
-        
         document.getElementById('transactionDetailContent').innerHTML = html;
-        new bootstrap.Modal(document.getElementById('detailModal')).show();
         
     } catch (error) {
         console.error('Error loading transaction detail:', error);
         document.getElementById('transactionDetailContent').innerHTML = 
-            '<div class="alert alert-danger">Gagal memuat detail transaksi</div>';
+            `<div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Gagal memuat detail transaksi:</strong> ${error.message}
+            </div>`;
+    }
+}
+
+function formatDateTime(dateString) {
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return dateString;
+        return date.toLocaleString('id-ID', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch (e) {
+        return dateString;
     }
 }
 
@@ -237,7 +365,19 @@ function exportToExcel() {
         return;
     }
     
-    const html = table.outerHTML;
+    // Clone table untuk menghapus tombol aksi
+    const cloneTable = table.cloneNode(true);
+    const rows = cloneTable.getElementsByTagName('tr');
+    
+    // Hapus kolom aksi (kolom terakhir)
+    for (let i = 0; i < rows.length; i++) {
+        const cells = rows[i].cells;
+        if (cells.length > 0) {
+            rows[i].deleteCell(cells.length - 1);
+        }
+    }
+    
+    const html = cloneTable.outerHTML;
     const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -249,10 +389,41 @@ function exportToExcel() {
     URL.revokeObjectURL(url);
 }
 
-// Auto refresh every 30 seconds
+// Buat transaksi test (hanya untuk debug)
+async function createTestTransaction() {
+    if (!confirm('Buat data transaksi test? Ini hanya untuk debugging.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/create_test_transaction', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert('Data test berhasil dibuat!');
+            window.location.reload();
+        } else {
+            alert('Gagal: ' + data.message);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+function refreshPage() {
+    window.location.reload();
+}
+
+// Auto refresh every 30 seconds jika di halaman ini
 setInterval(() => {
-    if (!document.hidden) {
-        window.location.reload();
+    if (!document.hidden && window.location.pathname.includes('/admin/history')) {
+        refreshPage();
     }
 }, 30000);
 </script>

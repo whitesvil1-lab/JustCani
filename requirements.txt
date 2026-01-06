@@ -11,7 +11,7 @@ idna
 itsdangerous
 Jinja2
 MarkupSafe
-pillow
+Pillow
 platformdirs
 protobuf
 setuptools
@@ -20,3 +20,6 @@ WTForms
 python-barcode
 gunicorn
 psycopg2-binary
+opencv-python
+numpy
+pyzbar

@@ -1,0 +1,472 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h4 class="mb-0">
+                <i class="bi bi-upc-scan me-2"></i>Barcode Scanner
+            </h4>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-8">
+                    <!-- Video Container -->
+                    <div class="position-relative" id="videoContainer">
+                        <video id="video" width="100%" height="400" playsinline></video>
+                        <canvas id="canvas" style="display: none;"></canvas>
+                        
+                        <!-- Scanner overlay -->
+                        <div class="scanner-overlay" id="scannerOverlay"></div>
+                        <div class="scanner-guide" id="scannerGuide"></div>
+                    </div>
+                    
+                    <!-- Controls -->
+                    <div class="mt-3 text-center">
+                        <button class="btn btn-success me-2" id="startButton">
+                            <i class="bi bi-play-circle"></i> Start Scanner
+                        </button>
+                        <button class="btn btn-danger" id="stopButton" disabled>
+                            <i class="bi bi-stop-circle"></i> Stop Scanner
+                        </button>
+                        <button class="btn btn-outline-secondary ms-2" onclick="window.location.href='/kasir'">
+                            <i class="bi bi-arrow-left"></i> Kembali ke Kasir
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <!-- Result Display -->
+                    <div class="card">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0">Hasil Scan</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="resultArea">
+                                <p class="text-muted text-center">
+                                    <i class="bi bi-info-circle fs-1 d-block mb-2"></i>
+                                    Arahkan barcode ke kamera
+                                </p>
+                            </div>
+                            
+                            <!-- Manual Input -->
+                            <hr>
+                            <div class="mt-3">
+                                <label class="form-label">Atau masukkan SKU manual:</label>
+                                <div class="input-group">
+                                    <input type="text" id="manualInput" class="form-control" placeholder="Masukkan SKU">
+                                    <button class="btn btn-primary" onclick="manualSearch()">
+                                        <i class="bi bi-search"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Load QuaggaJS -->
+<script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
+
+<style>
+.scanner-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: 2px solid #0d6efd;
+    box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+    display: none;
+}
+
+.scanner-guide {
+    position: absolute;
+    top: 50%;
+    left: 10%;
+    right: 10%;
+    height: 2px;
+    background: #0d6efd;
+    animation: scanLine 2s infinite linear;
+    pointer-events: none;
+    display: none;
+}
+
+@keyframes scanLine {
+    0% { top: 10%; }
+    100% { top: 90%; }
+}
+</style>
+
+<script>
+let scannerActive = false;
+let quaggaInstance = null;
+
+// Initialize QuaggaJS
+function initScanner() {
+    Quagga.init({
+        inputStream: {
+            name: "Live",
+            type: "LiveStream",
+            target: document.querySelector('#video'),
+            constraints: {
+                facingMode: "environment",
+                width: { min: 640, ideal: 1280, max: 1920 },
+                height: { min: 480, ideal: 720, max: 1080 }
+            }
+        },
+        decoder: {
+            readers: ["code_128_reader", "ean_reader", "ean_8_reader", "code_39_reader"],
+            multiple: false
+        },
+        locate: true,
+        debug: {
+            showCanvas: true,
+            showPatches: true,
+            showFoundPatches: true,
+            showSkeleton: true,
+            showLabels: true,
+            showPatchLabels: true,
+            showRemainingPatchLabels: true,
+            boxFromPatches: {
+                showTransformed: true,
+                showTransformedBox: true,
+                showBB: true
+            }
+        }
+    }, function(err) {
+        if (err) {
+            console.error(err);
+            document.getElementById('resultArea').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Error mengakses kamera: ${err.message}<br>
+                    Pastikan browser mengizinkan akses kamera
+                </div>
+            `;
+            document.getElementById('startButton').disabled = false;
+            document.getElementById('stopButton').disabled = true;
+            scannerActive = false;
+            return;
+        }
+        
+        console.log("Scanner initialized successfully");
+        Quagga.start();
+        quaggaInstance = Quagga;
+    });
+
+    Quagga.onProcessed(function(result) {
+        var drawingCtx = Quagga.canvas.ctx.overlay,
+            drawingCanvas = Quagga.canvas.dom.overlay;
+
+        if (result) {
+            if (result.boxes) {
+                drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.getAttribute("width")), parseInt(drawingCanvas.getAttribute("height")));
+                result.boxes.filter(function (box) {
+                    return box !== result.box;
+                }).forEach(function (box) {
+                    Quagga.ImageDebug.drawPath(box, {x: 0, y: 1}, drawingCtx, {color: "green", lineWidth: 2});
+                });
+            }
+
+            if (result.box) {
+                Quagga.ImageDebug.drawPath(result.box, {x: 0, y: 1}, drawingCtx, {color: "#00F", lineWidth: 2});
+            }
+
+            if (result.codeResult && result.codeResult.code) {
+                Quagga.ImageDebug.drawPath(result.line, {x: 'x', y: 'y'}, drawingCtx, {color: 'red', lineWidth: 3});
+            }
+        }
+    });
+
+    Quagga.onDetected(function(result) {
+        if (result && result.codeResult) {
+            const code = result.codeResult.code;
+            console.log("Barcode detected:", code);
+            processBarcode(code);
+            
+            // Stop scanning for 2 seconds to prevent multiple detections
+            Quagga.stop();
+            setTimeout(() => {
+                if (scannerActive) {
+                    Quagga.start();
+                }
+            }, 2000);
+        }
+    });
+}
+
+// Start scanner
+document.getElementById('startButton').addEventListener('click', function() {
+    if (!scannerActive) {
+        document.getElementById('startButton').disabled = true;
+        document.getElementById('stopButton').disabled = false;
+        document.getElementById('scannerOverlay').style.display = 'block';
+        document.getElementById('scannerGuide').style.display = 'block';
+        
+        document.getElementById('resultArea').innerHTML = `
+            <div class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Mengaktifkan kamera...</p>
+            </div>
+        `;
+        
+        scannerActive = true;
+        initScanner();
+    }
+});
+
+// Stop scanner
+document.getElementById('stopButton').addEventListener('click', function() {
+    if (scannerActive && quaggaInstance) {
+        quaggaInstance.stop();
+        scannerActive = false;
+        document.getElementById('startButton').disabled = false;
+        document.getElementById('stopButton').disabled = true;
+        document.getElementById('scannerOverlay').style.display = 'none';
+        document.getElementById('scannerGuide').style.display = 'none';
+        
+        document.getElementById('resultArea').innerHTML = `
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                Scanner dihentikan. Klik "Start Scanner" untuk memulai.
+            </div>
+        `;
+    }
+});
+
+// Process barcode
+// Process barcode
+async function processBarcode(barcode) {
+    try {
+        document.getElementById('resultArea').innerHTML = `
+            <div class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Memproses barcode: <strong>${barcode}</strong></p>
+            </div>
+        `;
+
+        // Cari produk di produk biasa
+        const response = await fetch(`/api/search?q=${barcode}`);
+        let data = await response.json();
+        
+        let product = null;
+        let productType = 'biasa';
+        
+        // Cek apakah produk ditemukan di produk biasa
+        if (Array.isArray(data) && data.length > 0) {
+            product = data[0];
+        }
+        
+        // Jika tidak ditemukan di produk biasa, cari di produk lelang
+        if (!product) {
+            const responseLelang = await fetch(`/api/search_lelang?q=${barcode}`);
+            const dataLelang = await responseLelang.json();
+            
+            if (Array.isArray(dataLelang) && dataLelang.length > 0) {
+                product = dataLelang[0];
+                productType = 'lelang';
+            }
+        }
+
+        if (product) {
+            const sku = product.no_SKU || product.sku || barcode;
+            const name = product.Name_product || product.name || 'Produk tanpa nama';
+            const price = product.Price || product.price || 0;
+            const stok = product.stok || 'N/A';
+            const expiredDate = product.expired_date ? 
+                new Date(product.expired_date).toLocaleDateString('id-ID') : '-';
+            
+            document.getElementById('resultArea').innerHTML = `
+    <div class="alert alert-success">
+        <i class="bi bi-check-circle me-2"></i>
+        <strong>Produk ditemukan!</strong>
+    </div>
+    <div class="mt-3">
+        <p><strong>SKU:</strong> <span class="badge bg-secondary">${sku}</span></p>
+        <p><strong>Nama:</strong> ${name}</p>
+        <p><strong>Harga:</strong> Rp${parseInt(price).toLocaleString()}</p>
+        ${productType === 'biasa' ? `<p><strong>Stok:</strong> ${stok} pcs</p>` : ''}
+        <p><strong>Jenis:</strong> ${productType === 'lelang' ? '<span class="badge bg-warning">Lelang</span>' : '<span class="badge bg-info">Biasa</span>'}</p>
+        ${expiredDate !== '-' ? `<p><strong>Expired:</strong> ${expiredDate}</p>` : ''}
+    </div>
+    <div class="mt-3">
+        <button class="btn btn-primary w-100" onclick="addToCartScanner('${sku}', '${name.replace(/'/g, "\\'")}', ${price}, '${productType}')">
+            <i class="bi bi-cart-plus"></i> Tambah ke Keranjang
+        </button>
+        <button class="btn btn-outline-secondary w-100 mt-2" onclick="scanAnother()">
+            <i class="bi bi-arrow-repeat"></i> Scan Lagi
+        </button>
+    </div>
+`;
+        } else {
+            document.getElementById('resultArea').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Produk tidak ditemukan!</strong>
+                    <p class="mb-0">SKU <strong>${barcode}</strong> tidak terdaftar dalam database.</p>
+                </div>
+                <div class="mt-3">
+                    <button class="btn btn-outline-secondary w-100" onclick="scanAnother()">
+                        <i class="bi bi-arrow-repeat"></i> Coba Lagi
+                    </button>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error processing barcode:', error);
+        document.getElementById('resultArea').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Error!</strong>
+                <p class="mb-0">${error.message}</p>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-outline-secondary w-100" onclick="scanAnother()">
+                    <i class="bi bi-arrow-repeat"></i> Coba Lagi
+                </button>
+            </div>
+        `;
+    }
+}
+
+// Manual search
+async function manualSearch() {
+    const input = document.getElementById('manualInput').value.trim();
+    if (!input) {
+        alert('Masukkan SKU terlebih dahulu!');
+        return;
+    }
+    await processBarcode(input);
+    document.getElementById('manualInput').value = '';
+}
+
+// Add to cart
+// Gunakan function global dari cart.js
+function addToCartScanner(sku, name, price, type) {
+    console.log('[SCANNER] Adding to cart via global function');
+    
+    // Panggil function global
+    const success = window.Cart ? 
+        window.Cart.add(sku, name, price, type) : 
+        addToCart(sku, name, price, type);
+    
+    if (success) {
+        const summary = window.Cart ? window.Cart.getSummary() : getCartSummary();
+        
+        document.getElementById('resultArea').innerHTML = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle me-2"></i>
+                <strong>Berhasil!</strong>
+                <p class="mb-0">${name} ditambahkan ke keranjang.</p>
+                <small>Total: ${summary.totalItems} item (Rp${summary.totalPrice.toLocaleString()})</small>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-primary w-100" onclick="window.location.href='/kasir'">
+                    <i class="bi bi-cart3"></i> Lihat Keranjang (${summary.totalItems})
+                </button>
+                <button class="btn btn-outline-secondary w-100 mt-2" onclick="scanAnother()">
+                    <i class="bi bi-arrow-repeat"></i> Scan Lagi
+                </button>
+                <button class="btn btn-outline-danger w-100 mt-2" onclick="if(window.Cart) window.Cart.clear()">
+                    <i class="bi bi-trash"></i> Kosongkan Keranjang
+                </button>
+            </div>
+        `;
+    }
+}
+
+// Helper function jika window.Cart belum ada
+function getCartSummary() {
+    const cartItems = JSON.parse(localStorage.getItem('cartItems') || '[]');
+    const totalItems = cartItems.reduce((sum, item) => sum + (item.qty || 1), 0);
+    const totalPrice = cartItems.reduce((sum, item) => sum + (item.subtotal || item.price || 0), 0);
+    
+    return { totalItems, totalPrice };
+}
+
+
+function goToCart() {
+    window.location.href = '/kasir';
+}
+
+function clearCart() {
+    if (confirm('Yakin ingin mengosongkan keranjang?')) {
+        localStorage.removeItem('cartItems');
+        document.getElementById('resultArea').innerHTML = `
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>Keranjang dikosongkan!</strong>
+                <p class="mb-0">Silakan scan produk lagi.</p>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-outline-secondary w-100" onclick="scanAnother()">
+                    <i class="bi bi-arrow-repeat"></i> Scan Lagi
+                </button>
+            </div>
+        `;
+    }
+}
+
+function checkCart() {
+    const cartItems = JSON.parse(localStorage.getItem('cartItems') || '[]');
+    const totalItems = cartItems.reduce((sum, item) => sum + item.qty, 0);
+    const totalPrice = cartItems.reduce((sum, item) => sum + item.subtotal, 0);
+    
+    alert(`Keranjang: ${totalItems} item\nTotal: Rp${totalPrice.toLocaleString()}`);
+}
+
+// Scan another
+function scanAnother() {
+    document.getElementById('resultArea').innerHTML = `
+        <p class="text-muted text-center">
+            <i class="bi bi-info-circle fs-1 d-block mb-2"></i>
+            Arahkan barcode ke kamera
+        </p>
+    `;
+    
+    // Restart scanner if it was active
+    if (scannerActive && quaggaInstance) {
+        quaggaInstance.start();
+    }
+}
+
+// Clean up on page unload
+window.addEventListener('beforeunload', function() {
+    if (scannerActive && quaggaInstance) {
+        quaggaInstance.stop();
+    }
+});
+
+// Handle Enter key in manual input
+document.getElementById('manualInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        manualSearch();
+    }
+});
+
+function testAddToCart() {
+    const testItem = {
+        sku: 'TEST123',
+        name: 'Produk Test',
+        price: 10000,
+        qty: 1,
+        subtotal: 10000,
+        mode: 'biasa'
+    };
+    
+    let cart = JSON.parse(localStorage.getItem('cartItems') || '[]');
+    cart.push(testItem);
+    localStorage.setItem('cartItems', JSON.stringify(cart));
+    
+    alert('✅ Test item ditambahkan! Cek di halaman kasir.');
+}
+</script>
+{% endblock %}

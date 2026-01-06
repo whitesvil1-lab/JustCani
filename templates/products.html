@@ -101,6 +101,8 @@ let allProducts = [];
 async function loadProducts(type) {
     currentType = type;
     
+    console.log(`📦 Loading ${type} products...`);
+    
     // Update button styles
     document.getElementById('btnBiasa').className = type === 'biasa' ? 'btn btn-primary' : 'btn btn-outline-primary';
     document.getElementById('btnLelang').className = type === 'lelang' ? 'btn btn-warning' : 'btn btn-outline-warning';
@@ -110,22 +112,58 @@ async function loadProducts(type) {
         type === 'biasa' ? 'Daftar Produk Biasa' : 'Daftar Produk Lelang';
     
     // Show loading
+    const colCount = type === 'biasa' ? 6 : 5;
     document.getElementById('productsBody').innerHTML = `
         <tr>
-            <td colspan="5" class="text-center py-5">
+            <td colspan="${colCount}" class="text-center py-5">
                 <div class="spinner-border text-primary" role="status">
                     <span class="visually-hidden">Loading...</span>
                 </div>
-                <p class="mt-2 text-muted">Memuat data produk...</p>
+                <p class="mt-2 text-muted">Memuat data ${type}...</p>
             </td>
         </tr>
     `;
     
     try {
-        // Fetch data from API
+        // Gunakan endpoint yang benar
         const endpoint = type === 'biasa' ? '/api/search?q=' : '/api/search_lelang?q=';
+        console.log(`🌐 Fetching from: ${endpoint}`);
+        
         const response = await fetch(endpoint);
-        allProducts = await response.json();
+        
+        console.log(`📥 Response status: ${response.status}`);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Error response:', errorText);
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log(`📊 Data received:`, data);
+        
+        // Handle response format
+        let products = [];
+        if (Array.isArray(data)) {
+            products = data;
+        } else if (data && typeof data === 'object') {
+            // Coba extract dari berbagai format
+            if (data.results && Array.isArray(data.results)) {
+                products = data.results;
+            } else if (data.products && Array.isArray(data.products)) {
+                products = data.products;
+            } else if (data.error) {
+                throw new Error(data.error);
+            } else {
+                // Jika object bukan array, convert ke array
+                products = [data];
+            }
+        } else {
+            throw new Error('Invalid response format');
+        }
+        
+        console.log(`✅ Processed ${products.length} ${type} products`);
+        allProducts = products;
         
         // Set table header
         const headers = type === 'biasa' 
@@ -151,12 +189,18 @@ async function loadProducts(type) {
         filterProducts();
         
     } catch (error) {
-        console.error('Error loading products:', error);
+        console.error(`❌ Error loading ${type} products:`, error);
         document.getElementById('productsBody').innerHTML = `
             <tr>
-                <td colspan="5" class="text-center py-5 text-danger">
+                <td colspan="${colCount}" class="text-center py-5 text-danger">
                     <i class="bi bi-exclamation-triangle fs-4 d-block mb-2"></i>
                     Gagal memuat data produk
+                    <br>
+                    <small>${error.message}</small>
+                    <br>
+                    <button class="btn btn-sm btn-outline-primary mt-2" onclick="loadProducts('${type}')">
+                        <i class="bi bi-arrow-clockwise"></i> Coba Lagi
+                    </button>
                 </td>
             </tr>
         `;
@@ -167,27 +211,44 @@ function filterProducts() {
     const searchTerm = document.getElementById('searchInput').value.toLowerCase();
     const sortBy = document.getElementById('sortSelect').value;
     
-    // Filter products
-    let filtered = allProducts.filter(p => 
-        p.Name_product.toLowerCase().includes(searchTerm) || 
-        p.no_SKU.toString().includes(searchTerm)
-    );
+    // Filter products - handle berbagai field names
+    let filtered = allProducts.filter(p => {
+        const name = (p.Name_product || p.name || p.name_product || p.nama || '').toLowerCase();
+        const sku = (p.no_SKU || p.sku || p.no_sku || p.SKU || '').toString().toLowerCase();
+        return name.includes(searchTerm) || sku.includes(searchTerm);
+    });
     
     // Sort products
     filtered.sort((a, b) => {
+        const nameA = a.Name_product || a.name || a.name_product || a.nama || '';
+        const nameB = b.Name_product || b.name || b.name_product || b.nama || '';
+        const priceA = parseFloat(a.Price || a.price || a.harga || 0);
+        const priceB = parseFloat(b.Price || b.price || b.harga || 0);
+        
+        // Handle date dengan aman
+        let expiryA = new Date(0);
+        let expiryB = new Date(0);
+        
+        try {
+            if (a.expired_date) expiryA = new Date(a.expired_date);
+            if (b.expired_date) expiryB = new Date(b.expired_date);
+        } catch (e) {
+            console.warn('Date parsing error:', e);
+        }
+        
         switch(sortBy) {
             case 'name_asc':
-                return a.Name_product.localeCompare(b.Name_product);
+                return nameA.localeCompare(nameB);
             case 'name_desc':
-                return b.Name_product.localeCompare(a.Name_product);
+                return nameB.localeCompare(nameA);
             case 'price_asc':
-                return a.Price - b.Price;
+                return priceA - priceB;
             case 'price_desc':
-                return b.Price - a.Price;
+                return priceB - priceA;
             case 'expiry_asc':
-                return new Date(a.expired_date) - new Date(b.expired_date);
+                return expiryA - expiryB;
             case 'expiry_desc':
-                return new Date(b.expired_date) - new Date(a.expired_date);
+                return expiryB - expiryA;
             default:
                 return 0;
         }
@@ -213,36 +274,62 @@ function filterProducts() {
     }
     
     filtered.forEach(product => {
-        const expiredDate = product.expired_date ? 
-            new Date(product.expired_date).toLocaleDateString('id-ID') : '-';
+        // Handle semua kemungkinan field names
+        const sku = product.no_SKU || product.sku || product.no_sku || 'N/A';
+        const name = product.Name_product || product.name || product.name_product || product.nama || 'Produk tanpa nama';
+        const price = product.Price || product.price || product.harga || 0;
+        const stok = product.stok || product.Stok || product.stock || 0;
+        
+        // Format tanggal dengan aman
+        let expiredDate = '-';
+        try {
+            if (product.expired_date) {
+                const date = new Date(product.expired_date);
+                if (!isNaN(date.getTime())) {
+                    expiredDate = date.toLocaleDateString('id-ID', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric'
+                    });
+                } else {
+                    expiredDate = product.expired_date;
+                }
+            }
+        } catch (e) {
+            console.warn('Date formatting error:', e);
+            expiredDate = product.expired_date || '-';
+        }
+        
+        // Escape quotes untuk onclick
+        const safeName = name.replace(/'/g, "\\'").replace(/"/g, '\\"');
         
         const row = document.createElement('tr');
         
         if (currentType === 'biasa') {
             row.innerHTML = `
-                <td><span class="badge bg-secondary">${product.no_SKU}</span></td>
-                <td class="fw-bold">${product.Name_product}</td>
-                <td>Rp${parseInt(product.Price).toLocaleString()}</td>
+                <td><span class="badge bg-secondary">${sku}</span></td>
+                <td class="fw-bold" title="${name}">${name.length > 30 ? name.substring(0, 30) + '...' : name}</td>
+                <td>Rp${parseInt(price).toLocaleString()}</td>
                 <td>
-                    <span class="badge ${product.stok > 10 ? 'bg-success' : product.stok > 0 ? 'bg-warning' : 'bg-danger'}">
-                        ${product.stok} pcs
+                    <span class="badge ${stok > 10 ? 'bg-success' : stok > 0 ? 'bg-warning' : 'bg-danger'}">
+                        ${stok} pcs
                     </span>
                 </td>
                 <td>${expiredDate}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-info" onclick="showProductDetail(${product.no_SKU}, '${currentType}')">
+                    <button class="btn btn-sm btn-outline-info" onclick="showProductDetail('${sku}', '${currentType}')">
                         <i class="bi bi-eye"></i> Detail
                     </button>
                 </td>
             `;
         } else {
             row.innerHTML = `
-                <td><span class="badge bg-secondary">${product.no_SKU}</span></td>
-                <td class="fw-bold">${product.Name_product}</td>
-                <td class="text-danger fw-bold">Rp${parseInt(product.Price).toLocaleString()}</td>
+                <td><span class="badge bg-secondary">${sku}</span></td>
+                <td class="fw-bold" title="${name}">${name.length > 30 ? name.substring(0, 30) + '...' : name}</td>
+                <td class="text-danger fw-bold">Rp${parseInt(price).toLocaleString()}</td>
                 <td>${expiredDate}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-info" onclick="showProductDetail(${product.no_SKU}, '${currentType}')">
+                    <button class="btn btn-sm btn-outline-info" onclick="showProductDetail('${sku}', '${currentType}')">
                         <i class="bi bi-eye"></i> Detail
                     </button>
                 </td>
@@ -253,76 +340,180 @@ function filterProducts() {
     });
 }
 
+// Function khusus untuk products.html
+function addToCartFromProducts(sku, name, price, type) {
+    console.log('[PRODUCTS] Adding to cart');
+    
+    // Gunakan function global jika ada
+    if (window.Cart) {
+        const success = window.Cart.add(sku, name, price, type);
+        if (success) {
+            alert(`✅ ${name} berhasil ditambahkan ke keranjang!`);
+            
+            // Tutup modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('productModal'));
+            if (modal) modal.hide();
+            
+            if (confirm('Lihat keranjang sekarang?')) {
+                window.location.href = '/kasir';
+            }
+        }
+    } else {
+        // Fallback
+        addToCartFromDetail(sku, name, price, type);
+    }
+}
+
+function formatDate(dateString) {
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return dateString;
+        return date.toLocaleDateString('id-ID', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric'
+        });
+    } catch (e) {
+        return dateString;
+    }
+}
+
 async function showProductDetail(sku, type) {
     try {
-        // Fetch product detail
-        const endpoint = type === 'biasa' ? '/api/search?q=' : '/api/search_lelang?q=';
-        const response = await fetch(endpoint + sku);
-        const products = await response.json();
-        const product = products.find(p => p.no_SKU == sku);
+        console.log(`[DEBUG] Loading detail for SKU: ${sku}, Type: ${type}`);
+        
+        const endpoint = type === 'biasa' ? '/api/search?q=' + sku : '/api/search_lelang?q=' + sku;
+        console.log(`[DEBUG] API endpoint: ${endpoint}`);
+        
+        const response = await fetch(endpoint);
+        const data = await response.json();
+        
+        console.log(`[DEBUG] API response:`, data);
+        
+        let product = null;
+        if (Array.isArray(data) && data.length > 0) {
+            product = data[0];
+        }
         
         if (!product) {
-            document.getElementById('productDetailContent').innerHTML = 
-                '<div class="alert alert-danger">Produk tidak ditemukan</div>';
+            alert('Produk tidak ditemukan');
             return;
         }
         
-        const expiredDate = product.expired_date ? 
-            new Date(product.expired_date).toLocaleDateString('id-ID') : 'Tidak ada';
+        console.log(`[DEBUG] Found product:`, product);
         
-        let html = `
-            <div class="row">
-                <div class="col-md-6">
-                    <p><strong>SKU:</strong> <span class="badge bg-secondary">${product.no_SKU}</span></p>
-                    <p><strong>Nama Produk:</strong> ${product.Name_product}</p>
-                    <p><strong>Harga:</strong> <span class="fw-bold text-primary">Rp${parseInt(product.Price).toLocaleString()}</span></p>
-                </div>
-                <div class="col-md-6">
-                    <p><strong>Tanggal Kadaluarsa:</strong> ${expiredDate}</p>
-        `;
+        const modalContent = document.getElementById('productDetailContent');
+        const price = product.Price || product.price || product.harga || 0;
+        const stok = product.stok || product.Stok || product.stock || 'N/A';
         
-        if (type === 'biasa') {
-            html += `
-                    <p><strong>Stok Tersedia:</strong> 
-                        <span class="badge ${product.stok > 10 ? 'bg-success' : product.stok > 0 ? 'bg-warning' : 'bg-danger'}">
-                            ${product.stok} pcs
-                        </span>
-                    </p>
-            `;
-        } else {
-            html += `
-                    <p><strong>Jenis:</strong> 
-                        <span class="badge bg-warning">PRODUK LELANG</span>
-                    </p>
-                    <p class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Harga sudah diskon 50%</p>
-            `;
+        // Format tanggal
+        let expiredDate = '-';
+        try {
+            if (product.expired_date) {
+                const date = new Date(product.expired_date);
+                if (!isNaN(date.getTime())) {
+                    expiredDate = date.toLocaleDateString('id-ID', {
+                        day: '2-digit',
+                        month: 'long',
+                        year: 'numeric'
+                    });
+                }
+            }
+        } catch (e) {
+            expiredDate = product.expired_date || '-';
         }
         
-        html += `
+        const productType = type === 'biasa' ? 'Biasa' : 'Lelang';
+        const productName = product.Name_product || product.name || product.name_product || product.nama || 'Tanpa Nama';
+        
+        // Escape quotes
+        const safeName = productName.replace(/'/g, "\\'").replace(/"/g, '\\"');
+        
+        modalContent.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong>SKU:</strong> <span class="badge bg-secondary">${sku}</span></p>
+                    <p><strong>Nama Produk:</strong> ${productName}</p>
+                    <p><strong>Jenis:</strong> <span class="badge ${type === 'biasa' ? 'bg-info' : 'bg-warning'}">${productType}</span></p>
                 </div>
+                <div class="col-md-6">
+                    <p><strong>Harga:</strong> <span class="fw-bold text-primary">Rp${parseInt(price).toLocaleString()}</span></p>
+                    ${type === 'biasa' ? `<p><strong>Stok:</strong> ${stok} pcs</p>` : ''}
+                    ${expiredDate !== '-' ? `<p><strong>Tanggal Expired:</strong> ${expiredDate}</p>` : ''}
+                </div>
+            </div>
+            <div class="mt-3 text-center">
+                <button class="btn btn-primary" onclick="addToCartFromProducts('${sku}', '${safeName}', ${price}, '${type}')">
+                    <i class="bi bi-cart-plus"></i> Tambah ke Keranjang
+                </button>
+                <button class="btn btn-outline-secondary ms-2" data-bs-dismiss="modal">
+                    <i class="bi bi-x"></i> Tutup
+                </button>
             </div>
         `;
         
-        document.getElementById('productDetailContent').innerHTML = html;
         new bootstrap.Modal(document.getElementById('productModal')).show();
         
     } catch (error) {
         console.error('Error loading product detail:', error);
-        document.getElementById('productDetailContent').innerHTML = 
-            '<div class="alert alert-danger">Gagal memuat detail produk</div>';
+        alert('Gagal memuat detail produk: ' + error.message);
     }
 }
 
-// Auto refresh every 60 seconds
-setInterval(() => {
-    if (!document.hidden) {
-        loadProducts(currentType);
+function addToCartFromDetail(sku, name, price, type) {
+    console.log('Adding to cart:', { sku, name, price, type });
+    
+    try {
+        // Get or create cart
+        let cart = JSON.parse(localStorage.getItem('cartItems') || '[]');
+        
+        // Check if item already exists
+        let existingItem = cart.find(item => item.sku === sku && item.mode === type);
+        
+        if (existingItem) {
+            existingItem.qty += 1;
+            existingItem.subtotal = existingItem.qty * existingItem.price;
+        } else {
+            cart.push({
+                sku: sku,
+                name: name,
+                price: parseFloat(price),
+                qty: 1,
+                subtotal: parseFloat(price),
+                mode: type
+            });
+        }
+        
+        // Save back to localStorage
+        localStorage.setItem('cartItems', JSON.stringify(cart));
+        
+        console.log('Cart updated:', cart);
+        
+        // Show success message
+        alert(`✅ ${name} berhasil ditambahkan ke keranjang!`);
+        
+        // Close modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('productModal'));
+        if (modal) modal.hide();
+        
+        // Optional: Redirect to kasir page
+        if (confirm('Lihat keranjang belanja?')) {
+            window.location.href = '/kasir';
+        }
+        
+    } catch (error) {
+        console.error('Error adding to cart:', error);
+        alert('❌ Gagal menambahkan ke keranjang: ' + error.message);
     }
-}, 60000);
+}
 
-// Load initial data
+// Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     loadProducts('biasa');
+    
+    // Add event listener for search input
+    document.getElementById('searchInput').addEventListener('input', filterProducts);
+    document.getElementById('sortSelect').addEventListener('change', filterProducts);
 });
 </script>
 {% endblock %}

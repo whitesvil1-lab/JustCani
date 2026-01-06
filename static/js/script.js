@@ -18,266 +18,381 @@ function setMode(mode) {
     searchItem();
 }
 
-// Fungsi search produk
-async function searchItem() {
-    const query = document.getElementById('query').value;
-    const resultsDiv = document.getElementById('searchResults');
+// // Fungsi search produk
+// async function searchItem() {
+//     const query = document.getElementById('query').value;
+//     const resultsDiv = document.getElementById('searchResults');
     
-    // Show loading
-    resultsDiv.innerHTML = `
-        <div class="col-12 text-center py-4">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <p class="mt-2 text-muted">Mencari produk...</p>
-        </div>
-    `;
+//     // Show loading
+//     resultsDiv.innerHTML = `
+//         <div class="col-12 text-center py-4">
+//             <div class="spinner-border text-primary" role="status">
+//                 <span class="visually-hidden">Loading...</span>
+//             </div>
+//             <p class="mt-2 text-muted">Mencari produk...</p>
+//         </div>
+//     `;
     
-    try {
-        const endpoint = currentMode === 'biasa' ? '/api/search' : '/api/search_lelang';
-        const response = await fetch(`${endpoint}?q=${encodeURIComponent(query)}`);
+//     try {
+//         const endpoint = currentMode === 'biasa' ? '/api/search' : '/api/search_lelang';
+//         const response = await fetch(`${endpoint}?q=${encodeURIComponent(query)}`);
         
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
+//         if (!response.ok) {
+//             throw new Error(`HTTP ${response.status}`);
+//         }
         
-        const data = await response.json();
+//         const data = await response.json();
         
-        // Handle error response
-        if (data.error) {
-            throw new Error(data.error);
-        }
+//         // Handle array response
+//         if (Array.isArray(data)) {
+//             displayResults(data);
+//         } 
+//         // Handle object response with error
+//         else if (data.error) {
+//             throw new Error(data.error);
+//         }
+//         // Handle object response with results array
+//         else if (data.results && Array.isArray(data.results)) {
+//             displayResults(data.results);
+//         }
+//         else {
+//             displayResults([]);
+//         }
         
-        // Panggil fungsi displayResults
-        displayResults(data);
-        
-    } catch (error) {
-        console.error('Search error:', error);
-        resultsDiv.innerHTML = `
-            <div class="col-12 text-center py-5">
-                <i class="bi bi-exclamation-triangle text-danger fs-1 d-block mb-2"></i>
-                <p class="text-danger">Gagal memuat produk</p>
-                <small class="text-muted">${error.message}</small>
-            </div>
-        `;
-    }
-}
+//     } catch (error) {
+//         console.error('Search error:', error);
+//         resultsDiv.innerHTML = `
+//             <div class="col-12 text-center py-5">
+//                 <i class="bi bi-exclamation-triangle text-danger fs-1 d-block mb-2"></i>
+//                 <p class="text-danger">Gagal memuat produk</p>
+//                 <small class="text-muted">${error.message}</small>
+//             </div>
+//         `;
+//     }
+// }
 
 // Fungsi untuk menampilkan hasil pencarian
 function displayResults(products) {
     const resultsDiv = document.getElementById('searchResults');
-    
-    if (!products || products.length === 0) {
-        resultsDiv.innerHTML = `
-            <div class="col-12 text-center py-5">
-                <i class="bi bi-search fs-1 text-muted d-block mb-2"></i>
-                <p class="text-muted">Tidak ada produk ditemukan</p>
-            </div>
-        `;
-        return;
-    }
-    
-    resultsDiv.innerHTML = '';
-    
-    products.forEach(product => {
-        const card = document.createElement('div');
-        card.className = 'col-md-6 col-lg-4 mb-3';
         
-        const expiredDate = product.expired_date ? 
-            new Date(product.expired_date).toISOString().split('T')[0] : '-';
-        
-        card.innerHTML = `
-            <div class="card h-100 border shadow-sm">
-                <div class="card-body">
-                    <h6 class="card-title fw-bold">${product.Name_product}</h6>
-                    <p class="card-text small text-muted mb-1">
-                        SKU: <span class="badge bg-secondary">${product.no_SKU}</span>
-                    </p>
-                    <p class="card-text mb-1">
-                        <span class="fw-bold text-primary">Rp${parseInt(product.Price).toLocaleString()}</span>
-                    </p>
-                    ${currentMode === 'biasa' ? 
-                        `<p class="card-text small">Stok: <span class="badge ${product.stok > 10 ? 'bg-success' : 'bg-warning'}">${product.stok} pcs</span></p>` : 
-                        `<p class="card-text small text-warning"><i class="bi bi-tag"></i> Produk Lelang</p>`
-                    }
-                    <p class="card-text small text-muted">Exp: ${expiredDate}</p>
-                    <button class="btn btn-sm btn-outline-primary w-100" 
-                            onclick="addToCart(${product.no_SKU}, '${product.Name_product.replace(/'/g, "\\'")}', ${product.Price})">
-                        <i class="bi bi-cart-plus"></i> Tambah
-                    </button>
+        if (!products || products.length === 0) {
+            resultsDiv.innerHTML = `
+                <div class="col-12 text-center py-5">
+                    <i class="bi bi-search fs-1 text-muted d-block mb-2"></i>
+                    <p class="text-muted">Tidak ada produk ditemukan</p>
                 </div>
-            </div>
-        `;
+            `;
+            return;
+        }
         
-        resultsDiv.appendChild(card);
-    });
-}
+        resultsDiv.innerHTML = '';
+        
+        products.forEach(product => {
+            // Pastikan field tidak undefined
+            const sku = product.no_SKU || product.sku || product.no_sku || 'N/A';
+            const name = product.Name_product || product.name || product.name_product || 'Produk tanpa nama';
+            const price = product.Price || product.price || 0;
+            const stok = product.stok || product.Stok || 0;
+            const expiredDate = product.expired_date ? 
+                new Date(product.expired_date).toISOString().split('T')[0] : '-';
+            
+            const card = document.createElement('div');
+            card.className = 'col-md-6 col-lg-4 mb-3';
+            
+            card.innerHTML = `
+                <div class="card h-100 border shadow-sm product-item">
+                    <div class="card-body">
+                        <h6 class="card-title fw-bold">${name}</h6>
+                        <p class="card-text small text-muted mb-1">
+                            SKU: <span class="badge bg-secondary">${sku}</span>
+                        </p>
+                        <p class="card-text mb-1">
+                            <span class="fw-bold text-primary">Rp${parseInt(price).toLocaleString()}</span>
+                        </p>
+                        ${currentMode === 'biasa' ? 
+                            `<p class="card-text small">Stok: <span class="badge ${stok > 10 ? 'bg-success' : 'bg-warning'}">${stok} pcs</span></p>` : 
+                            `<p class="card-text small text-warning"><i class="bi bi-tag"></i> Produk Lelang</p>`
+                        }
+                        <p class="card-text small text-muted">Exp: ${expiredDate}</p>
+                        <button class="btn btn-sm btn-outline-primary w-100" 
+                                onclick="addToCart('${sku}', '${name.replace(/'/g, "\\'")}', ${price})">
+                            <i class="bi bi-cart-plus"></i> Tambah
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            resultsDiv.appendChild(card);
+        });
+    }
 
 // Fungsi tambah ke keranjang
-function addToCart(sku, name, price) {
-    // Cek apakah item sudah ada di keranjang
-    const existingItem = cartItems.find(item => item.sku == sku && item.mode === currentMode);
+// function addToCart(sku, name, price, mode = null) {
+//     if (window.Cart) {
+//         return window.Cart.add(sku, name, price, mode || currentMode);
+//     } else {
+//         console.warn('Cart.js belum di-load, menggunakan fallback');
+//         return addToCartFallback(sku, name, price, mode);
+//     }
+// }
+
+// Fallback function jika cart.js belum di-load
+function addToCartFallback(sku, name, price, mode = null) {
+    const itemMode = mode || currentMode;
+    const existingItem = cartItems.find(item => item.sku == sku && item.mode === itemMode);
     
     if (existingItem) {
         existingItem.qty += 1;
-        existingItem.subtotal = existingItem.qty * price;
+        existingItem.subtotal = existingItem.qty * existingItem.price;
     } else {
         cartItems.push({
             sku: sku,
             name: name,
-            price: price,
+            price: parseFloat(price),
             qty: 1,
-            subtotal: price,
-            mode: currentMode
+            subtotal: parseFloat(price),
+            mode: itemMode
         });
     }
     
+    localStorage.setItem('cartItems', JSON.stringify(cartItems));
     updateCartDisplay();
+    showCartNotification(`${name} ditambahkan ke keranjang`);
+    return true;
 }
+
+// Tambahkan fungsi notifikasi:
+// function showCartNotification(message) {
+//     const existingNotif = document.querySelector('.cart-notification');
+//     if (existingNotif) {
+//         existingNotif.remove();
+//     }
+    
+//     const notification = document.createElement('div');
+//     notification.className = 'cart-notification position-fixed top-0 end-0 m-3 p-3 bg-success text-white rounded shadow';
+//     notification.style.zIndex = '9999';
+//     notification.innerHTML = `
+//         <div class="d-flex align-items-center">
+//             <i class="bi bi-check-circle me-2 fs-4"></i>
+//             <div>
+//                 <strong>Berhasil!</strong>
+//                 <div class="small">${message}</div>
+//             </div>
+//         </div>
+// //     `;
+    
+//     document.body.appendChild(notification);
+    
+//     Auto remove after 3 seconds
+//     setTimeout(() => {
+//         notification.style.opacity = '0';
+//         notification.style.transition = 'opacity 0.5s';
+//         setTimeout(() => notification.remove(), 500);
+//     }, 3000);
+// }
 
 // Update tampilan keranjang
-function updateCartDisplay() {
-    const cartList = document.getElementById('cartList');
-    const cartCount = document.getElementById('cartCount');
-    const totalHarga = document.getElementById('totalHarga');
+// function updateCartDisplay() {
+//     const cartList = document.getElementById('cartList');
+//     const cartCount = document.getElementById('cartCount');
+//     const totalHarga = document.getElementById('totalHarga');
     
-    // Update count
-    const totalItems = cartItems.reduce((sum, item) => sum + item.qty, 0);
-    cartCount.textContent = `${totalItems} Item`;
+//     // Update count
+//     const totalItems = cartItems.reduce((sum, item) => sum + item.qty, 0);
+//     cartCount.textContent = `${totalItems} Item`;
     
-    // Update cart list
-    if (cartItems.length === 0) {
-        cartList.innerHTML = '<div class="text-center text-muted py-5 bg-light rounded">Belum ada item</div>';
-        totalHarga.textContent = 'Rp0';
-        return;
-    }
+//     // Update cart list
+//     if (cartItems.length === 0) {
+//         cartList.innerHTML = '<div class="text-center text-muted py-5 bg-light rounded">Belum ada item</div>';
+//         totalHarga.textContent = 'Rp0';
+//         return;
+//     }
     
-    let html = '';
-    let total = 0;
+//     let html = '';
+//     let total = 0;
     
-    cartItems.forEach((item, index) => {
-        total += item.subtotal;
-        html += `
-            <div class="cart-item border-bottom pb-2 mb-2">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div class="flex-grow-1">
-                        <h6 class="mb-1">${item.name}</h6>
-                        <small class="text-muted">SKU: ${item.sku}</small>
-                        <div class="mt-2">
-                            <button class="btn btn-sm btn-outline-secondary btn-sm" onclick="updateQty(${index}, -1)">-</button>
-                            <span class="mx-2">${item.qty} @Rp${parseInt(item.price).toLocaleString()}</span>
-                            <button class="btn btn-sm btn-outline-secondary btn-sm" onclick="updateQty(${index}, 1)">+</button>
-                            <button class="btn btn-sm btn-outline-danger btn-sm ms-2" onclick="removeFromCart(${index})">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="text-end">
-                        <h6 class="mb-0 text-primary">Rp${parseInt(item.subtotal).toLocaleString()}</h6>
-                        ${item.mode === 'lelang' ? '<small class="text-warning"><i class="bi bi-tag"></i> Lelang</small>' : ''}
-                    </div>
-                </div>
-            </div>
-        `;
-    });
+//     cartItems.forEach((item, index) => {
+//         total += item.subtotal;
+//         html += `
+//             <div class="cart-item border-bottom pb-2 mb-2">
+//                 <div class="d-flex justify-content-between align-items-start">
+//                     <div class="flex-grow-1">
+//                         <h6 class="mb-1">${item.name}</h6>
+//                         <small class="text-muted">SKU: ${item.sku}</small>
+//                         <div class="mt-2">
+//                             <button class="btn btn-sm btn-outline-secondary btn-sm" onclick="updateQty(${index}, -1)">-</button>
+//                             <span class="mx-2">${item.qty} @Rp${parseInt(item.price).toLocaleString()}</span>
+//                             <button class="btn btn-sm btn-outline-secondary btn-sm" onclick="updateQty(${index}, 1)">+</button>
+//                             <button class="btn btn-sm btn-outline-danger btn-sm ms-2" onclick="removeFromCart(${index})">
+//                                 <i class="bi bi-trash"></i>
+//                             </button>
+//                         </div>
+//                     </div>
+//                     <div class="text-end">
+//                         <h6 class="mb-0 text-primary">Rp${parseInt(item.subtotal).toLocaleString()}</h6>
+//                         ${item.mode === 'lelang' ? '<small class="text-warning"><i class="bi bi-tag"></i> Lelang</small>' : ''}
+//                     </div>
+//                 </div>
+//             </div>
+//         `;
+//     });
     
-    cartList.innerHTML = html;
-    totalHarga.textContent = `Rp${parseInt(total).toLocaleString()}`;
+//     cartList.innerHTML = html;
+//     totalHarga.textContent = `Rp${parseInt(total).toLocaleString()}`;
     
-    // Show/hide lelang info
-    const hasLelang = cartItems.some(item => item.mode === 'lelang');
-    document.getElementById('lelangInfo').classList.toggle('d-none', !hasLelang);
-}
+//     // Show/hide lelang info
+//     const hasLelang = cartItems.some(item => item.mode === 'lelang');
+//     document.getElementById('lelangInfo').classList.toggle('d-none', !hasLelang);
+// }
 
 // Fungsi update quantity
-function updateQty(index, change) {
-    const item = cartItems[index];
-    const newQty = item.qty + change;
+// function updateQty(index, change) {
+//     const item = cartItems[index];
+//     const newQty = item.qty + change;
     
-    if (newQty < 1) {
-        removeFromCart(index);
-        return;
-    }
+//     if (newQty < 1) {
+//         removeFromCart(index);
+//         return;
+//     }
     
-    item.qty = newQty;
-    item.subtotal = item.qty * item.price;
-    updateCartDisplay();
-}
+//     item.qty = newQty;
+//     item.subtotal = item.qty * item.price;
+//     updateCartDisplay();
+// }
 
-// Fungsi hapus dari keranjang
-function removeFromCart(index) {
-    cartItems.splice(index, 1);
-    updateCartDisplay();
-}
+// // Fungsi hapus dari keranjang
+// function removeFromCart(index) {
+//     cartItems.splice(index, 1);
+//     updateCartDisplay();
+// }
 
 // Fungsi checkout
 async function checkout() {
-    if (cartItems.length === 0) {
-        alert('Keranjang kosong!');
-        return;
-    }
-    
-    // Pisahkan item biasa dan lelang
-    const biasaItems = cartItems.filter(item => item.mode === 'biasa');
-    const lelangItems = cartItems.filter(item => item.mode === 'lelang');
-    
     try {
-        // Show loading
-        document.getElementById('loadingSpinner').style.display = 'block';
+        console.log('Starting checkout...');
         
-        if (biasaItems.length > 0) {
-            const response = await fetch('/api/checkout', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    items: biasaItems.map(item => ({
-                        sku: item.sku,
-                        qty: item.qty
-                    }))
-                })
-            });
-            
-            const result = await response.json();
-            if (!result.success) {
-                throw new Error(result.message);
-            }
+        if (cartItems.length === 0) {
+            alert('Keranjang kosong!');
+            return;
         }
         
-        if (lelangItems.length > 0) {
-            const response = await fetch('/api/checkout_lelang', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    items: lelangItems.map(item => ({
-                        sku: item.sku,
-                        qty: item.qty
-                    }))
-                })
-            });
-            
-            const result = await response.json();
-            if (!result.success) {
-                throw new Error(result.message);
-            }
+        // Hanya test biasa items dulu
+        const biasaItems = cartItems.filter(item => item.mode === 'biasa');
+        
+        if (biasaItems.length === 0) {
+            alert('Tidak ada item biasa untuk checkout');
+            return;
         }
         
-        // Reset cart
-        cartItems = [];
-        updateCartDisplay();
-        document.getElementById('query').value = '';
-        searchItem();
+        // Siapkan data
+        const requestData = {
+            items: biasaItems.map(item => ({
+                sku: String(item.sku),
+                qty: Number(item.qty)
+            }))
+        };
         
-        alert('Transaksi berhasil!');
+        console.log('Sending:', requestData);
+        
+        // Kirim request
+        const response = await fetch('/api/checkout', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+        });
+        
+        console.log('Response status:', response.status);
+        
+        const result = await response.json();
+        console.log('Result:', result);
+        
+        if (result.success) {
+            alert('Berhasil! ' + result.message);
+            // Clear cart
+            cartItems = cartItems.filter(item => item.mode !== 'biasa');
+            localStorage.setItem('cartItems', JSON.stringify(cartItems));
+            updateCartDisplay();
+        } else {
+            alert('Gagal: ' + result.message);
+        }
         
     } catch (error) {
+        console.error('Checkout error:', error);
         alert('Error: ' + error.message);
-    } finally {
-        document.getElementById('loadingSpinner').style.display = 'none';
     }
+}
+
+// Fungsi untuk menampilkan struk
+function showReceipt(biasaItems, lelangItems) {
+    const allItems = [...biasaItems, ...lelangItems];
+    const total = allItems.reduce((sum, item) => sum + item.subtotal, 0);
+    const transactionId = 'TRX-' + Date.now();
+    const now = new Date();
+    
+    const receiptWindow = window.open('', 'Struk', 'width=400,height=600');
+    receiptWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Struk Pembayaran</title>
+            <style>
+                body { 
+                    font-family: 'Courier New', monospace; 
+                    padding: 15px;
+                    font-size: 12px;
+                }
+                .header { text-align: center; margin-bottom: 10px; }
+                .header h3 { margin: 0; }
+                .line { border-top: 1px dashed #000; margin: 10px 0; }
+                .item-row { display: flex; justify-content: space-between; margin: 3px 0; }
+                .total { font-weight: bold; font-size: 14px; }
+                .footer { text-align: center; margin-top: 20px; font-size: 10px; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h3>JustCani POS</h3>
+                <p>${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID')}</p>
+                <p>ID: ${transactionId}</p>
+                <p>Kasir: ${'{{ session.get("username") }}' || 'User'}</p>
+            </div>
+            <div class="line"></div>
+            
+            <div class="items">
+                ${allItems.map(item => `
+                    <div class="item-row">
+                        <div>
+                            ${item.name.substring(0, 20)}
+                            <small>${item.mode === 'lelang' ? ' (L)' : ''}</small>
+                        </div>
+                        <div>${item.qty} x Rp${item.price.toLocaleString()}</div>
+                        <div>Rp${item.subtotal.toLocaleString()}</div>
+                    </div>
+                `).join('')}
+            </div>
+            
+            <div class="line"></div>
+            
+            <div class="item-row total">
+                <div>TOTAL</div>
+                <div>Rp${total.toLocaleString()}</div>
+            </div>
+            
+            <div class="footer">
+                <p>Terima kasih telah berbelanja</p>
+                <p>*** JustCani System ***</p>
+            </div>
+            
+            <script>
+                setTimeout(() => window.print(), 500);
+            </script>
+        </body>
+        </html>
+    `);
+    receiptWindow.document.close();
 }
 
 // ============================================
@@ -428,6 +543,35 @@ async function checkBarcodeStatus() {
     }
 }
 
+
+// Function untuk test checkout
+async function testCheckout() {
+    try {
+        const testItems = [{
+            sku: "12345",
+            qty: 1
+        }];
+        
+        const response = await fetch('/api/debug_cart', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                items: testItems,
+                test: true
+            })
+        });
+        
+        const result = await response.json();
+        console.log('Test result:', result);
+        alert(`Test result: ${result.success ? 'SUCCESS' : 'FAILED'}\nMessage: ${result.message}`);
+        
+    } catch (error) {
+        console.error('Test error:', error);
+        alert('Test failed: ' + error.message);
+    }
+}
 // ============================================
 // INITIALIZATION
 // ============================================

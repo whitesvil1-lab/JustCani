@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 
 # ============================================
-# BARCODE IMPORTS (tambah di atas)
+# BARCODE IMPORTS
 # ============================================
 try:
     import barcode
@@ -24,7 +24,6 @@ class Database:
     @staticmethod
     def get_conn():
         try:
-            # Gunakan DATABASE_URL dari Environment Variable Vercel nanti
             db_url = os.environ.get('DATABASE_URL') or "postgresql://neondb_owner:npg_ptNaxkIwe4D9@ep-little-hat-ah5adtxh-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
             return psycopg2.connect(db_url)
                 
@@ -36,208 +35,95 @@ class Inventory:
     def __init__(self, db_conn):
         self.db = db_conn
 
-    # ============================================
-    # FUNGSI BARCODE (TAMBAH DI DALAM CLASS)
-    # ============================================
-    
-    def generate_product_barcode(self, sku, product_name, price):
-        """Generate barcode image untuk produk baru"""
-        if not BARCODE_AVAILABLE:
-            return None
-        
-        try:
-            # Generate barcode Code128
-            code128 = barcode.get_barcode_class('code128')
-            barcode_instance = code128(str(sku), writer=ImageWriter())
-            
-            # Save to bytes
-            buffer = BytesIO()
-            barcode_instance.write(buffer)
-            buffer.seek(0)
-            
-            # Convert to base64
-            barcode_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-            barcode_data = f"data:image/png;base64,{barcode_base64}"
-            
-            # Save to database
-            cursor = self.db.cursor(cursor_factory=RealDictCursor)
-            try:
-                # Try regular products          
-                cursor.execute("""
-                    UPDATE produk_biasa 
-                    SET barcode_image = %s 
-                    WHERE no_SKU = %s
-                """, (barcode_data, sku))
-                
-                # Try auction products
-                cursor.execute("""
-                    UPDATE produk_lelang 
-                    SET barcode_image = %s 
-                    WHERE no_SKU = %s
-                """, (barcode_data, sku))
-                
-                self.db.commit()
-                print(f"✅ Barcode saved for SKU: {sku}")
-            except Exception as e:
-                print(f"⚠️ Could not save barcode to DB: {e}")
-                self.db.rollback()
-            finally:
-                cursor.close()
-            
-            return barcode_data
-        except Exception as e:
-            print(f"Error generating barcode: {e}")
-            return None
-        
-        def save_barcode_to_db(self, sku, barcode_data):
-            """Simpan barcode ke database"""
-            if not self.db:
-                return False
-        
-            cursor = self.db.cursor(cursor_factory=RealDictCursor)
-            try:
-                # Coba update produk biasa
-                cursor.execute("""
-                    UPDATE produk_biasa 
-                    SET barcode_image = %s 
-                    WHERE no_SKU = %s
-                """, (barcode_data, sku))
-            
-                # Coba update produk lelang
-                cursor.execute("""
-                    UPDATE produk_lelang 
-                    SET barcode_image = %s 
-                    WHERE no_SKU = %s
-                """, (barcode_data, sku))
-            
-                self.db.commit()
-                return True
-            except Exception as e:
-                print(f"Error saving barcode to DB: {e}")
-                self.db.rollback()
-                return False
-            finally:
-                cursor.close()
-
-def get_product_barcode(self, sku):
-    """Ambil barcode dari database"""
-    if not self.db:
-        return None
-    
-    cursor = self.db.cursor(dictionary=True)
-    try:
-        # Cek di produk biasa
-        cursor.execute("""
-            SELECT barcode_image 
-            FROM produk_biasa 
-            WHERE no_SKU = %s
-        """, (sku,))
-        result = cursor.fetchone()
-        
-        if result and result['barcode_image']:
-            return result['barcode_image']
-        
-        # Cek di produk lelang
-        cursor.execute("""
-            SELECT barcode_image 
-            FROM produk_lelang 
-            WHERE no_SKU = %s
-        """, (sku,))
-        result = cursor.fetchone()
-        
-        if result and result['barcode_image']:
-            return result['barcode_image']
-        
-        return None
-    except Exception as e:
-        print(f"Error getting barcode from DB: {e}")
-        return None
-    finally:
-        cursor.close()
-    # ============================================
-    
-class Inventory:
-    def __init__(self, db_conn):
-        self.db = db_conn
-
-    def search_produk(self, query):
-        """Search produk biasa - FIXED"""
+    def search_produk(self, query=''):
+        """Search produk biasa - FIXED COLUMN NAMES"""
         if not self.db: 
             return []
         
         cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
-            # Clean query
-            query = str(query).strip()
-            
-            # Jika query kosong, tampilkan semua
-            if query == '':
-                sql = "SELECT no_SKU, Name_product, Price, expired_date, stok FROM produk_biasa LIMIT 50"
-                cursor.execute(sql)
-            else:
-                # Cari dengan berbagai cara
-                sql = """
-                SELECT no_SKU, Name_product, Price, expired_date, stok 
-                FROM produk_biasa 
-                WHERE Name_product LIKE %s 
-                OR no_SKU = %s
-                OR CAST(no_SKU AS CHAR) = %s
-                LIMIT 50
-                """
-                
-                # Coba convert ke integer untuk exact match
-                try:
-                    sku_int = int(query)
-                except:
-                    sku_int = -9999  # nilai yang tidak mungkin ada
-                    
-                cursor.execute(sql, (
-                    f"%{query}%",      # Nama produk
-                    sku_int,           # SKU sebagai integer
-                    query              # SKU sebagai string
-                ))
-            
-            result = cursor.fetchall()
-            print(f"[DEBUG] search_produk found {len(result)} results for query: '{query}'")
-            return result
-            
-        except Exception as e:
-            print(f"[ERROR] search_produk: {e}")
-            return []
-        finally:
-            cursor.close()
-
-    def search_produk_lelang(self, query):
-        """Search produk lelang - FIXED VERSION"""
-        if not self.db: 
-            return []
-        
-        cursor = self.db.cursor(cursor_factory=RealDictCursor)
-        try:
-            # FIX: Convert SKU to string untuk match dengan query
+            # ✅ FIX: Gunakan no_sku (bukan no_SKU), name_product, price, stok
             sql = """
-            SELECT no_SKU, Name_product, Price, expired_date 
-            FROM produk_lelang 
-            WHERE Name_product LIKE %s 
-               OR no_SKU = %s 
-               OR CAST(no_SKU AS CHAR) LIKE %s
+            SELECT 
+                no_sku as no_SKU,           -- Alias untuk kompatibilitas
+                name_product as Name_product, 
+                price as Price, 
+                expired_date,
+                COALESCE(stok, 0) as stok
+            FROM produk_biasa 
+            WHERE name_product ILIKE %s 
+            OR CAST(no_sku AS VARCHAR) ILIKE %s
+            ORDER BY name_product
             LIMIT 50
             """
-            # Coba match dengan integer jika query adalah angka
-            try:
-                sku_int = int(query)
-            except:
-                sku_int = 0
-                
-            cursor.execute(sql, (f"%{query}%", sku_int, f"%{query}%"))
+            
+            search_pattern = f"%{query}%" if query else "%"
+            cursor.execute(sql, (search_pattern, search_pattern))
+            
             result = cursor.fetchall()
+            
+            print(f"[DEBUG] search_produk query: '{query}' found {len(result)} results")
+            
             return result
         except Exception as e:
-            print(f"[ERROR] search_produk_lelang: {e}")
+            print(f"[ERROR] search_produk: {e}")
+            import traceback
+            traceback.print_exc()
             return []
         finally:
             cursor.close()
 
+    def search_produk_lelang(self, query=''):
+        """Search produk lelang - FIXED VERSION"""
+        print(f"[DEBUG] Searching produk lelang: '{query}'")
+        
+        if not self.db: 
+            print("[DEBUG] No database connection")
+            return []
+        
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
+        try:
+            # ✅ SIMPLE QUERY - Sesuai struktur database
+            sql = """
+            SELECT 
+                no_sku,
+                name_product,
+                price,
+                expired_date
+            FROM produk_lelang 
+            WHERE name_product ILIKE %s 
+            OR CAST(no_sku AS VARCHAR) ILIKE %s
+            ORDER BY name_product
+            LIMIT 50
+            """
+            
+            search_pattern = f"%{query}%" if query else "%"
+            cursor.execute(sql, (search_pattern, search_pattern))
+            
+            results = cursor.fetchall()
+            
+            print(f"[DEBUG] Found {len(results)} lelang results")
+            
+            # Format hasil dengan field names yang konsisten
+            formatted_results = []
+            for r in results:
+                formatted_results.append({
+                    'no_SKU': r['no_sku'],  # Perhatikan: 'no_sku' bukan 'no_SKU'
+                    'Name_product': r['name_product'],
+                    'Price': r['price'],
+                    'expired_date': r['expired_date'].isoformat() if r.get('expired_date') else None,
+                    'type': 'lelang'
+                })
+            
+            return formatted_results
+            
+        except Exception as e:
+            print(f"[ERROR] search_produk_lelang failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
+        finally:
+            cursor.close()
     def move_to_lelang(self, sku, reason):
         if not self.db: return False, "Database tidak terhubung"
         
@@ -274,13 +160,9 @@ class Inventory:
             sql = "INSERT INTO produk_biasa (no_SKU, Name_product, Price, expired_date, stok) VALUES (%s, %s, %s, %s, 0)"
             cursor.execute(sql, (sku, name, harga, expired_date))
             
-            # ============================================
-            # AUTO GENERATE BARCODE SETELAH TAMBAH PRODUK
-            # ============================================
             barcode_img = self.generate_product_barcode(sku, name, harga)
             if barcode_img:
                 print(f"✅ Barcode generated for SKU: {sku}")
-            # ============================================
             
             self.db.commit()
         except psycopg2.Error as e:
@@ -289,22 +171,86 @@ class Inventory:
         finally:
             cursor.close()
             
+    def generate_product_barcode(self, sku, name, price):
+        """Generate barcode untuk produk"""
+        try:
+            if not BARCODE_AVAILABLE:
+                return None
+            
+            code128 = barcode.get_barcode_class('code128')
+            barcode_instance = code128(str(sku), writer=ImageWriter())
+            
+            buffer = BytesIO()
+            barcode_instance.write(buffer)
+            buffer.seek(0)
+            
+            barcode_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            return f"data:image/png;base64,{barcode_base64}"
+            
+        except Exception as e:
+            print(f"Error generating barcode: {e}")
+            return None
+    
+    def save_barcode_to_db(self, sku, barcode_data):
+        """Save barcode image to database"""
+        if not self.db: return False
+        
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
+        try:
+            # Try to update produk_biasa first
+            cursor.execute("""
+                UPDATE produk_biasa 
+                SET barcode_image = %s 
+                WHERE no_SKU = %s
+            """, (barcode_data, sku))
+            
+            # If no rows affected, try produk_lelang
+            if cursor.rowcount == 0:
+                cursor.execute("""
+                    UPDATE produk_lelang 
+                    SET barcode_image = %s 
+                    WHERE no_SKU = %s
+                """, (barcode_data, sku))
+            
+            self.db.commit()
+            return True
+        except Exception as e:
+            print(f"Error saving barcode to DB: {e}")
+            self.db.rollback()
+            return False
+        finally:
+            cursor.close()
+
 class TransactionHistory:
     def __init__(self, db_conn):
         self.db = db_conn
     
     def save_transaction(self, transaction_data):
         """Menyimpan transaksi ke history"""
-        if not self.db: return False
+        print(f"[HISTORY] Saving transaction: {transaction_data['transaction_id']}")
+        
+        if not self.db: 
+            print("[HISTORY] Database not connected")
+            return False
         
         cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             sql = """
             INSERT INTO transaction_history 
             (transaction_id, user_id, username, total_amount, transaction_type, 
-             payment_method, items_count, details)
+            payment_method, items_count, details)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """
+            
+            print(f"[HISTORY] Executing SQL with params:")
+            print(f"  transaction_id: {transaction_data['transaction_id']}")
+            print(f"  user_id: {transaction_data['user_id']}")
+            print(f"  username: {transaction_data['username']}")
+            print(f"  total_amount: {transaction_data['total_amount']}")
+            print(f"  transaction_type: {transaction_data['transaction_type']}")
+            print(f"  payment_method: {transaction_data.get('payment_method', 'cash')}")
+            print(f"  items_count: {transaction_data['items_count']}")
+            print(f"  details: {transaction_data['details'][:100]}...")
             
             cursor.execute(sql, (
                 transaction_data['transaction_id'],
@@ -317,20 +263,31 @@ class TransactionHistory:
                 transaction_data['details']
             ))
             
+            print(f"[HISTORY] Insert successful, rows affected: {cursor.rowcount}")
+            
             self.db.commit()
+            print("[HISTORY] Commit successful")
             return True
         except psycopg2.Error as e:
-            print(f"Error save transaction: {e}")
+            print(f"[HISTORY] Database error: {e}")
+            print(f"[HISTORY] Error details: {e.pgerror if hasattr(e, 'pgerror') else 'N/A'}")
+            self.db.rollback()
+            return False
+        except Exception as e:
+            print(f"[HISTORY] General error: {e}")
+            import traceback
+            print(f"[HISTORY] Traceback: {traceback.format_exc()}")
             self.db.rollback()
             return False
         finally:
             cursor.close()
+            print("[HISTORY] Cursor closed")
     
     def get_all_transactions(self, limit=100, offset=0):
         """Mengambil semua transaksi"""
         if not self.db: return []
         
-        cursor = self.db.cursor(dictionary=True)
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             sql = """
             SELECT * FROM transaction_history 
@@ -426,128 +383,104 @@ class Transaction:
         return f"TRX-{timestamp}-{random_num}"
     
     def checkout(self, items, user_id, username):
-        """Checkout transaksi biasa dengan menyimpan history"""
-        if not self.db: 
+        """Checkout transaksi biasa - FIXED FOR YOUR DATABASE STRUCTURE"""
+        print(f"🎯 [CHECKOUT] User: {username}, Items: {len(items)}")
+        
+        if not self.db:
             return False, "Database tidak terhubung"
         
-        cursor = self.db.cursor(cursor_factory=RealDictCursor)
+        cursor = self.db.cursor()
+        
         try:
-            total_amount = 0
+            total = 0
             transaction_items = []
             
-            # 1. Validasi dan hitung total
+            # VALIDATE AND CALCULATE
             for item in items:
-                # Convert SKU to string for consistency
-                sku = str(item['sku'])
+                sku = str(item.get('sku', '')).strip()
+                qty = int(item.get('qty', 1))
                 
-                cursor.execute("SELECT Name_product, Price, stok FROM produk_biasa WHERE no_SKU = %s", (sku,))
-                result = cursor.fetchone()
+                # Get product
+                cursor.execute("""
+                    SELECT name_product, price, stok 
+                    FROM produk_biasa 
+                    WHERE no_sku = %s
+                """, (sku,))
                 
-                if not result:
-                    return False, f"Produk {sku} tidak ditemukan"
+                product = cursor.fetchone()
+                if not product:
+                    return False, f"Produk SKU {sku} tidak ditemukan"
                 
-                if result[2] < item['qty']:
-                    return False, f"Stok tidak cukup untuk {result[0]}"
+                name, price, stock = product
                 
-                item_total = result[1] * item['qty']
-                total_amount += item_total
+                if stock < qty:
+                    return False, f"Stok {name} tidak cukup. Tersedia: {stock}"
+                
+                subtotal = price * qty
+                total += subtotal
                 
                 transaction_items.append({
                     'sku': sku,
-                    'name': result[0],
-                    'price': result[1],
-                    'qty': item['qty'],
-                    'subtotal': item_total
+                    'name': name,
+                    'price': float(price),
+                    'qty': qty,
+                    'subtotal': float(subtotal)
                 })
+                
+                # Update stock
+                cursor.execute(
+                    "UPDATE produk_biasa SET stok = stok - %s WHERE no_sku = %s",
+                    (qty, sku)
+                )
             
-            # 2. Update stok
-            for item in items:
-                sku = str(item['sku'])
-                sql = "UPDATE produk_biasa SET stok = stok - %s WHERE no_SKU = %s"
-                cursor.execute(sql, (item['qty'], sku))
+            if total == 0:
+                return False, "Total transaksi nol"
             
-            # 3. Simpan ke history
-            transaction_id = self.generate_transaction_id()
-            transaction_data = {
-                'transaction_id': transaction_id,
-                'user_id': user_id,
-                'username': username,
-                'total_amount': total_amount,
-                'transaction_type': 'biasa',
-                'payment_method': 'cash',
-                'items_count': len(items),
-                'details': json.dumps(transaction_items, ensure_ascii=False)
-            }
+            # ✅ FIX: INSERT SESUAI STRUKTUR DATABASE ANDA
+            import json
+            from datetime import datetime
             
-            if not self.history.save_transaction(transaction_data):
-                print("Warning: Gagal menyimpan transaksi ke history")
+            transaction_id = f"TRX{datetime.now().strftime('%Y%m%d%H%M%S')}"  # Max 20 chars
+            
+            # Generate ID manually (karena bukan SERIAL)
+            cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM transaction_history")
+            next_id = cursor.fetchone()[0]
+            
+            # ✅ INSERT dengan struktur yang sesuai database
+            cursor.execute("""
+                INSERT INTO transaction_history 
+                (id, transaction_id, transaction_date, user_id, username, 
+                total_amount, transaction_type, payment_method, items_count, details)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                next_id,                     # id (manual)
+                transaction_id,              # transaction_id (max 20 chars)
+                datetime.now(),              # transaction_date
+                user_id,                     # user_id
+                username,                    # username
+                total,                       # total_amount
+                'biasa',                     # transaction_type
+                'cash',                      # payment_method
+                len(items),                  # items_count
+                json.dumps(transaction_items, ensure_ascii=False)  # details
+            ))
             
             self.db.commit()
-            return True, f"Transaksi {transaction_id} berhasil! Total: Rp{total_amount:,}"
             
-        except psycopg2.Error as e:
-            self.db.rollback()
-            return False, f"Gagal: {str(e)}"
+            print(f"✅ [CHECKOUT SUCCESS] ID: {next_id}, TRX: {transaction_id}, Total: Rp{total:,.0f}")
+            return True, f"Transaksi {transaction_id} berhasil! Total: Rp{total:,.0f}"
+            
+        except Exception as e:
+            print(f"❌ [CHECKOUT ERROR] {e}")
+            import traceback
+            traceback.print_exc()
+            
+            if self.db:
+                self.db.rollback()
+            
+            return False, f"Error: {str(e)}"
         finally:
             cursor.close()
-    
-    def checkout_lelang(self, items, user_id, username):
-        """Checkout transaksi lelang dengan menyimpan history"""
-        if not self.db: return False, "Database tidak terhubung"
-        
-        cursor = self.db.cursor(cursor_factory=RealDictCursor)
-        try:
-            total_amount = 0
-            transaction_items = []
-            
-            # 1. Validasi dan hitung total
-            for item in items:
-                cursor.execute("SELECT Name_product, Price FROM produk_lelang WHERE no_SKU = %s", (item['sku'],))
-                result = cursor.fetchone()
-                
-                if not result:
-                    return False, f"Produk lelang {item['sku']} tidak ditemukan"
-                
-                item_total = result[1] * item['qty']
-                total_amount += item_total
-                
-                transaction_items.append({
-                    'sku': item['sku'],
-                    'name': result[0],
-                    'price': result[1],
-                    'qty': item['qty'],
-                    'subtotal': item_total
-                })
-            
-            # 2. Simpan ke history
-            transaction_id = self.generate_transaction_id()
-            transaction_data = {
-                'transaction_id': transaction_id,
-                'user_id': user_id,
-                'username': username,
-                'total_amount': total_amount,
-                'transaction_type': 'lelang',
-                'payment_method': 'cash',
-                'items_count': len(items),
-                'details': json.dumps(transaction_items, ensure_ascii=False)
-            }
-            
-            if not self.history.save_transaction(transaction_data):
-                print("Warning: Gagal menyimpan transaksi lelang ke history")
-            
-            # 3. Hapus dari produk lelang
-            for item in items:
-                cursor.execute("DELETE FROM produk_lelang WHERE no_SKU = %s", (item['sku'],))
-            
-            self.db.commit()
-            return True, f"Transaksi lelang {transaction_id} berhasil! Total: Rp{total_amount:,}"
-            
-        except psycopg2.Error as e:
-            self.db.rollback()
-            return False, f"Gagal: {str(e)}"
-        finally:
-            cursor.close()
-
 class CashierSystem:
     def __init__(self):
         self.db = Database.get_conn()
@@ -570,7 +503,6 @@ class CashierSystem:
         if not self.db: return None
         cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
-            # Cari user dengan email ATAU username
             sql = """
             SELECT id, username, email, password_hash, role, profile_pic
             FROM users 

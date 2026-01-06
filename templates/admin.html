@@ -215,61 +215,184 @@
 <script>
 async function loadProdukLelang() {
     try {
-        const response = await fetch('/api/search_lelang?q=');
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
+        console.log('🔍 Loading produk lelang...');
         
-        const tbody = document.querySelector('#lelangTable tbody');
-        tbody.innerHTML = '';
-        
-        if (!data || data.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="4" class="text-center text-muted py-3">
-                        <i class="bi bi-tag fs-4 d-block mb-2"></i>
-                        Belum ada produk lelang
-                    </td>
-                </tr>
-            `;
-        } else {
-            data.forEach(p => {
-                // FIX: Handle undefined/null values
-                const sku = p.no_SKU || p.sku || 'N/A';
-                const name = p.Name_product || p.name || 'Produk tidak ada nama';
-                const price = p.Price || p.price || 0;
-                const expiredDate = p.expired_date ? 
-                    new Date(p.expired_date).toISOString().split('T')[0] : 
-                    '-';
-                
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td><span class="badge bg-secondary">${sku}</span></td>
-                    <td>${name}</td>
-                    <td class="text-danger fw-bold">Rp${parseInt(price).toLocaleString()}</td>
-                    <td>${expiredDate}</td>
-                `;
-                tbody.appendChild(row);
-            });
-        }
-    } catch (error) {
-        console.error('Error loading produk lelang:', error);
+        // Show loading
         const tbody = document.querySelector('#lelangTable tbody');
         tbody.innerHTML = `
             <tr>
-                <td colspan="4" class="text-center text-danger py-3">
+                <td colspan="4" class="text-center py-4">
+                    <div class="spinner-border spinner-border-sm" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span class="ms-2">Memuat data...</span>
+                </td>
+            </tr>
+        `;
+        
+        const response = await fetch('/api/search_lelang?q=');
+        
+        console.log('📥 Response status:', response.status);
+        console.log('📥 Response headers:', response.headers);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Response error:', errorText);
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('✅ Data received:', data);
+        
+        // Clear table
+        tbody.innerHTML = '';
+        
+        // Handle empty data
+        if (!data || data.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="4" class="text-center text-muted py-5">
+                        <i class="bi bi-tag fs-4 d-block mb-2"></i>
+                        Belum ada produk lelang
+                        <br>
+                        <small class="text-muted">Total: 0 produk</small>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        // Process data
+        console.log(`📊 Processing ${data.length} products`);
+        
+        data.forEach((p, index) => {
+            console.log(`   Product ${index + 1}:`, p);
+            
+            // Extra safety: handle semua kemungkinan field names
+            const sku = p.no_SKU || p.sku || p.no_sku || p.SKU || 'N/A';
+            const name = p.Name_product || p.name || p.name_product || p.nama || 'Produk tanpa nama';
+            const price = p.Price || p.price || p.harga || 0;
+            
+            // Format expired date
+            let expiredDate = '-';
+            try {
+                if (p.expired_date) {
+                    const dateStr = p.expired_date;
+                    // Coba parse berbagai format date
+                    if (dateStr.includes('GMT')) {
+                        // Format dari database: "Mon, 28 Dec 2026 00:00:00 GMT"
+                        expiredDate = dateStr.split(' GMT')[0];
+                    } else {
+                        expiredDate = new Date(dateStr).toLocaleDateString('id-ID');
+                    }
+                }
+            } catch (e) {
+                console.warn('Date parsing error:', e);
+                expiredDate = p.expired_date || '-';
+            }
+            
+            // Create row
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>
+                    <span class="badge bg-secondary" title="SKU: ${sku}">${sku}</span>
+                </td>
+                <td>
+                    <div class="fw-bold">${name}</div>
+                    ${p.type === 'lelang' ? '<small class="text-warning"><i class="bi bi-tag"></i> Lelang</small>' : ''}
+                </td>
+                <td class="text-danger fw-bold">
+                    Rp${parseInt(price).toLocaleString()}
+                </td>
+                <td>
+                    <span class="text-muted">${expiredDate}</span>
+                </td>
+            `;
+            
+            tbody.appendChild(row);
+        });
+        
+        console.log('✅ Table populated successfully');
+        
+    } catch (error) {
+        console.error('❌ Error loading produk lelang:', error);
+        console.error('Error stack:', error.stack);
+        
+        const tbody = document.querySelector('#lelangTable tbody');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="4" class="text-center text-danger py-5">
                     <i class="bi bi-exclamation-triangle fs-4 d-block mb-2"></i>
-                    Error memuat data: ${error.message}
+                    <strong>Gagal memuat data!</strong>
+                    <div class="mt-2 small">
+                        ${error.message}
+                        <br>
+                        <button class="btn btn-sm btn-outline-primary mt-2" onclick="loadProdukLelang()">
+                            <i class="bi bi-arrow-clockwise"></i> Coba Lagi
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary mt-2 ms-2" onclick="testLelangAPI()">
+                            <i class="bi bi-bug"></i> Test API
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
     }
 }
 
+// Test function
+async function testLelangAPI() {
+    try {
+        console.log('🧪 Testing lelang API...');
+        const response = await fetch('/api/search_lelang');
+        const data = await response.json();
+        
+        console.log('Test result:', data);
+        alert(`Test Result:
+Status: ${response.status}
+Items: ${Array.isArray(data) ? data.length : 'Not array'}
+Type: ${typeof data}
+Check console for details`);
+        
+    } catch (error) {
+        console.error('Test error:', error);
+        alert(`Test failed: ${error.message}`);
+    }
+}
+
+// Load saat page ready
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('📄 Admin page loaded');
+    setTimeout(loadProdukLelang, 500);
+});
+
+
+// Debug function
+async function debugLelang() {
+    try {
+        const response = await fetch('/api/debug/lelang_products');
+        const data = await response.json();
+        
+        console.log('Debug data:', data);
+        
+        alert(`Debug Info:
+Table exists: ${data.table_exists}
+Total records: ${data.total_records}
+Columns: ${JSON.stringify(data.columns)}
+Check console for details`);
+        
+    } catch (error) {
+        console.error('Debug error:', error);
+        alert(`Debug failed: ${error.message}`);
+    }
+}
+
+// Auto refresh
+setInterval(loadProdukLelang, 30000);
+
 document.addEventListener('DOMContentLoaded', function() {
     loadProdukLelang();
-    setInterval(loadProdukLelang, 10000);
+    setInterval(loadProdukLelang, 30000); // Refresh every 30 seconds
 });
 </script>
 {% endblock %}

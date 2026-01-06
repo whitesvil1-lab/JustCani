@@ -1,14 +1,18 @@
 {
-    "version": 2,
-    "builds": [
-        { "src": "app.py", "use": "@vercel/python" }
-    ],
-    "routes": [
-        { "src": "/(.*)", "dest": "app.py" }
-    ] 
-
-
-
-
-
-}
+  "builds": [
+    {
+      "src": "app.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "app.py"
+    }
+  ],
+  "env": {
+    "PYTHON_VERSION": "3.9",
+    "DATABASE_URL": "postgresql://neondb_owner:npg_ptNaxkIwe4D9@ep-little-hat-ah5adtxh-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
+  }
+}  
