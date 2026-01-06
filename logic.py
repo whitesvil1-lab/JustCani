@@ -1,8 +1,9 @@
-import mysql.connector
-from mysql.connector import Error
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import bcrypt
 import json
 import random
+import os
 from datetime import datetime
 
 # ============================================
@@ -23,13 +24,11 @@ class Database:
     @staticmethod
     def get_conn():
         try:
-            return mysql.connector.connect(
-                host='localhost',
-                user='root',
-                password='',
-                database='db_kasir1'
-            )
-        except Error as e:
+            # Gunakan DATABASE_URL dari Environment Variable Vercel nanti
+            db_url = os.environ.get('DATABASE_URL') or "postgresql://neondb_owner:npg_ptNaxkIwe4D9@ep-little-hat-ah5adtxh-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
+            return psycopg2.connect(db_url)
+                
+        except Exception as e:
             print(f"Gagal koneksi database: {e}")
             return None
 
@@ -61,7 +60,7 @@ class Inventory:
             barcode_data = f"data:image/png;base64,{barcode_base64}"
             
             # Save to database
-            cursor = self.db.cursor()
+            cursor = self.db.cursor(cursor_factory=RealDictCursor)
             try:
                 # Try regular products          
                 cursor.execute("""
@@ -95,7 +94,7 @@ class Inventory:
             if not self.db:
                 return False
         
-            cursor = self.db.cursor()
+            cursor = self.db.cursor(cursor_factory=RealDictCursor)
             try:
                 # Coba update produk biasa
                 cursor.execute("""
@@ -166,7 +165,7 @@ class Inventory:
         if not self.db: 
             return []
         
-        cursor = self.db.cursor(dictionary=True)
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             # Clean query
             query = str(query).strip()
@@ -213,7 +212,7 @@ class Inventory:
         if not self.db: 
             return []
         
-        cursor = self.db.cursor(dictionary=True)
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             # FIX: Convert SKU to string untuk match dengan query
             sql = """
@@ -242,7 +241,7 @@ class Inventory:
     def move_to_lelang(self, sku, reason):
         if not self.db: return False, "Database tidak terhubung"
         
-        cursor = self.db.cursor()
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             cursor.execute("SELECT * FROM produk_biasa WHERE no_SKU = %s", (sku,))
             produk = cursor.fetchone()
@@ -262,7 +261,7 @@ class Inventory:
             self.db.commit()
             return True, f"Produk dipindah ke lelang. Harga baru: Rp{harga_diskon:,}"
             
-        except Error as e:
+        except psycopg2.Error as e:
             self.db.rollback()
             return False, f"Error: {str(e)}"
         finally:
@@ -270,7 +269,7 @@ class Inventory:
 
     def add_produk_baru(self, sku, name, harga, expired_date):
         if not self.db: return
-        cursor = self.db.cursor()
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             sql = "INSERT INTO produk_biasa (no_SKU, Name_product, Price, expired_date, stok) VALUES (%s, %s, %s, %s, 0)"
             cursor.execute(sql, (sku, name, harga, expired_date))
@@ -284,7 +283,7 @@ class Inventory:
             # ============================================
             
             self.db.commit()
-        except Error as e:
+        except psycopg2.Error as e:
             print(f"Error tambah produk: {e}")
             self.db.rollback()
         finally:
@@ -298,7 +297,7 @@ class TransactionHistory:
         """Menyimpan transaksi ke history"""
         if not self.db: return False
         
-        cursor = self.db.cursor()
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             sql = """
             INSERT INTO transaction_history 
@@ -320,7 +319,7 @@ class TransactionHistory:
             
             self.db.commit()
             return True
-        except Error as e:
+        except psycopg2.Error as e:
             print(f"Error save transaction: {e}")
             self.db.rollback()
             return False
@@ -340,7 +339,7 @@ class TransactionHistory:
             """
             cursor.execute(sql, (limit, offset))
             return cursor.fetchall()
-        except Error as e:
+        except psycopg2.Error as e:
             print(f"Error get transactions: {e}")
             return []
         finally:
@@ -350,7 +349,7 @@ class TransactionHistory:
         """Mengambil transaksi berdasarkan rentang tanggal"""
         if not self.db: return []
         
-        cursor = self.db.cursor(dictionary=True)
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             sql = """
             SELECT * FROM transaction_history 
@@ -359,7 +358,7 @@ class TransactionHistory:
             """
             cursor.execute(sql, (start_date, end_date))
             return cursor.fetchall()
-        except Error as e:
+        except psycopg2.Error as e:
             print(f"Error get transactions by date: {e}")
             return []
         finally:
@@ -369,7 +368,7 @@ class TransactionHistory:
         """Ringkasan transaksi harian"""
         if not self.db: return None
         
-        cursor = self.db.cursor(dictionary=True)
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             sql = """
             SELECT 
@@ -384,7 +383,7 @@ class TransactionHistory:
             """
             cursor.execute(sql, (date,))
             return cursor.fetchone()
-        except Error as e:
+        except psycopg2.Error as e:
             print(f"Error get daily summary: {e}")
             return None
         finally:
@@ -394,7 +393,7 @@ class TransactionHistory:
         """Laporan transaksi bulanan"""
         if not self.db: return []
         
-        cursor = self.db.cursor(dictionary=True)
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             sql = """
             SELECT 
@@ -409,7 +408,7 @@ class TransactionHistory:
             """
             cursor.execute(sql, (year, month))
             return cursor.fetchall()
-        except Error as e:
+        except psycopg2.Error as e:
             print(f"Error get monthly report: {e}")
             return []
         finally:
@@ -431,7 +430,7 @@ class Transaction:
         if not self.db: 
             return False, "Database tidak terhubung"
         
-        cursor = self.db.cursor()
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             total_amount = 0
             transaction_items = []
@@ -486,7 +485,7 @@ class Transaction:
             self.db.commit()
             return True, f"Transaksi {transaction_id} berhasil! Total: Rp{total_amount:,}"
             
-        except Error as e:
+        except psycopg2.Error as e:
             self.db.rollback()
             return False, f"Gagal: {str(e)}"
         finally:
@@ -496,7 +495,7 @@ class Transaction:
         """Checkout transaksi lelang dengan menyimpan history"""
         if not self.db: return False, "Database tidak terhubung"
         
-        cursor = self.db.cursor()
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             total_amount = 0
             transaction_items = []
@@ -543,7 +542,7 @@ class Transaction:
             self.db.commit()
             return True, f"Transaksi lelang {transaction_id} berhasil! Total: Rp{total_amount:,}"
             
-        except Error as e:
+        except psycopg2.Error as e:
             self.db.rollback()
             return False, f"Gagal: {str(e)}"
         finally:
@@ -569,7 +568,7 @@ class CashierSystem:
     def login_user(self, email_or_username, password):
         """Login dengan email ATAU username"""
         if not self.db: return None
-        cursor = self.db.cursor(dictionary=True)
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             # Cari user dengan email ATAU username
             sql = """
@@ -589,14 +588,14 @@ class CashierSystem:
                 'profile_pic': user['profile_pic'] or '/static/img/default-avatar.png'
                 }
             return None
-        except Error as e:
+        except psycopg2.Error as e:
             print(f"Error login: {e}")
             return None
         finally:
             cursor.close()
     def register_user(self, username, email, whatsapp, password, role='kasir'):
         if not self.db: return False
-        cursor = self.db.cursor()
+        cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             hashed_password = self.hash_password(password)
             
@@ -607,7 +606,7 @@ class CashierSystem:
             cursor.execute(sql, (username, email, whatsapp, hashed_password, role))
             self.db.commit()
             return True
-        except Error as e:
+        except psycopg2.Error as e:
             print(f"Error register: {e}")
             self.db.rollback()
             return False

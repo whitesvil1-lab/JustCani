@@ -1,10 +1,13 @@
 import sys
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from flask import Flask, render_template, url_for, flash, redirect, request, session, jsonify, send_file
 from forms import RegistrationForm, LoginForm
-from logic import CashierSystem, Inventory
+from logic import CashierSystem, Inventory, Database
 from datetime import datetime, timedelta    
 import json
-import os
+
 import base64
 from werkzeug.utils import secure_filename
 from io import BytesIO
@@ -94,10 +97,6 @@ def process_and_save_image(file, user_id):
         print(f"Error processing image: {e}")
         return None
 
-@app.route('/')
-def home():
-    return "Website sudah jalan di Vercel!"
-
 #=============================================
 # UTILITY FUNCTIONS
 # ============================================
@@ -140,7 +139,6 @@ def register():
             form.whatsapp.data, 
             form.password.data
         )
-        sys.close()
         if berhasil:
             flash('Akun berhasil dibuat! Silakan login.', 'success')
             return redirect(url_for('login'))
@@ -204,7 +202,6 @@ def upload_profile_pic():
         sql = "UPDATE users SET profile_pic = %s WHERE id = %s"
         cursor.execute(sql, (profile_pic_url, session['user_id']))
         sys.db.commit()
-        sys.close()
         
         session['profile_pic'] = profile_pic_url
         
@@ -246,23 +243,16 @@ def products():
 # log request details for debugging headers and body
 # ============================================
 
-@app.before_request
-def log_request_info():
-    logger.debug('Headers: %s', request.headers)
-    logger.debug('Body: %s', request.get_data())
-
 @app.route("/api/debug_db")
 def debug_db():
-    """Simple debug endpoint"""
+    """Simple debug endpoint - FIXED for PostgreSQL"""
     try:
-        import mysql.connector
-        conn = mysql.connector.connect(
-            host='localhost',
-            user='root',
-            password='',
-            database='db_kasir1'
-        )
-        cursor = conn.cursor(dictionary=True)
+        # Gunakan koneksi PostgreSQL kita
+        connection = Database.get_conn()
+        if not connection:
+            return "<h3>❌ ERROR</h3><p>Gagal koneksi ke PostgreSQL</p>"
+            
+        cursor = connection.cursor(cursor_factory=RealDictCursor)
         
         # Cek produk biasa
         cursor.execute("SELECT COUNT(*) as count FROM produk_biasa")
@@ -272,18 +262,27 @@ def debug_db():
         cursor.execute("SELECT COUNT(*) as count FROM produk_lelang")
         lelang_count = cursor.fetchone()
         
+        # Cek user (tambahan buat mastiin admin ada)
+        cursor.execute("SELECT COUNT(*) as count FROM users")
+        user_count = cursor.fetchone()
+        
         cursor.close()
-        conn.close()
+        connection.close()
         
         return f"""
-        <h3>Database Status</h3>
-        <p>Produk Biasa: {biasa_count['count']} item</p>
-        <p>Produk Lelang: {lelang_count['count']} item</p>
-        <p>✅ Database OK</p>
+        <div style="font-family: sans-serif; padding: 20px;">
+            <h3>📊 Database Cloud Status (Neon/Postgres)</h3>
+            <hr>
+            <p>✅ <b>Koneksi:</b> Berhasil</p>
+            <p>📦 <b>Produk Biasa:</b> {biasa_count['count']} item</p>
+            <p>🔨 <b>Produk Lelang:</b> {lelang_count['count']} item</p>
+            <p>👤 <b>Total User:</b> {user_count['count']} user</p>
+            <br>
+            <a href="/">Kembali ke Dashboard</a>
+        </div>
         """
     except Exception as e:
-        return f"<h3>❌ ERROR</h3><p>{str(e)}</p>"
-
+        return f"<div style='color:red;'><h3>❌ ERROR</h3><p>{str(e)}</p></div>"
 # ============================================
 # ROUTES - ADMIN FEATURES
 # ============================================
@@ -312,8 +311,6 @@ def admin_history():
     
     today = datetime.now().strftime("%Y-%m-%d")
     daily_summary = sys.transaction.history.get_daily_summary(today)
-    
-    sys.close()
     
     return render_template('admin_history.html', 
                          title='History Transaksi',
@@ -356,7 +353,6 @@ def admin_add():
             print(f"⚠️ Barcode generation failed: {e}")
     
     sys.inventory.add_produk_baru(sku, name, harga, expired_date)
-    sys.close()
     
     flash('Produk berhasil ditambahkan!', 'success')
     return redirect(url_for('admin'))
@@ -371,7 +367,6 @@ def admin_restock():
     sql = "UPDATE produk_biasa SET stok = stok + %s WHERE no_SKU = %s"
     cursor.execute(sql, (request.form.get('qty'), request.form.get('sku')))
     sys.db.commit()
-    sys.close()
     flash('Stok berhasil diperbarui!', 'success')
     return redirect(url_for('admin'))
 
@@ -390,7 +385,6 @@ def admin_move_lelang():
     
     sys = CashierSystem()
     success, message = sys.inventory.move_to_lelang(sku, reason)
-    sys.close()
     
     flash(message, 'success' if success else 'danger')
     return redirect(url_for('admin'))
@@ -414,7 +408,6 @@ def api_search():
         results = sys.inventory.search_produk(query)
         print(f"[DEBUG] Found {len(results)} results")
         
-        sys.close()
         return jsonify(results)
         
     except Exception as e:
@@ -438,7 +431,6 @@ def api_search_lelang():
         results = sys.inventory.search_produk_lelang(query)
         print(f"[DEBUG] Found {len(results)} results")
         
-        sys.close()
         return jsonify(results)
         
     except Exception as e:
@@ -459,7 +451,6 @@ def api_checkout():
         session['user_id'],
         session['username']
     )
-    sys.close()
     return jsonify({"success": success, "message": msg})
 
 @app.route("/api/checkout_lelang", methods=['POST'])
@@ -474,7 +465,6 @@ def api_checkout_lelang():
         session['user_id'],
         session['username']
     )
-    sys.close()
     return jsonify({"success": success, "message": msg})
 
 @app.route("/api/transaction/<int:transaction_id>")
@@ -483,7 +473,7 @@ def api_transaction_detail(transaction_id):
         return jsonify({"error": "Unauthorized"}), 401
     
     sys = CashierSystem()
-    cursor = sys.db.cursor(dictionary=True)
+    cursor = sys.db.cursor(cursor_factory=RealDictCursor)
     try:
         sql = "SELECT * FROM transaction_history WHERE id = %s"
         cursor.execute(sql, (transaction_id,))
@@ -497,7 +487,6 @@ def api_transaction_detail(transaction_id):
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
-        sys.close()
 
 # ============================================
 # API ENDPOINTS - STATISTICS & REPORTS
@@ -523,7 +512,7 @@ def api_stats():
     sys = CashierSystem()
     
     try:
-        cursor = sys.db.cursor(dictionary=True)
+        cursor = sys.db.cursor(cursor_factory=RealDictCursor)
         start_str = start_date.strftime('%Y-%m-%d %H:%M:%S')
         end_str = end_date.strftime('%Y-%m-%d %H:%M:%S')
         
@@ -615,7 +604,7 @@ def api_stats():
         print(f"Error getting stats: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
-        sys.close()
+        pass
 
 # ============================================
 # API ENDPOINTS - BARCODE MANAGEMENT
@@ -623,60 +612,52 @@ def api_stats():
 
 @app.route("/api/products/for_barcode")
 def api_products_for_barcode():
-    """Get all products for barcode dropdown - FIXED"""
+    """Get all products for barcode dropdown"""
     if not session.get('user_id'):
         return jsonify({"error": "Unauthorized"}), 401
     
-    try:
-        import mysql.connector
-        conn = mysql.connector.connect(
-            host='localhost',
-            user='root',
-            password='',
-            database='db_kasir1'
-        )
-        sys = CashierSystem()
-        cursor = conn.cursor(dictionary=True)
+    # Ambil koneksi dari class Database
+    connection = Database.get_conn()
+    if not connection:
+        return jsonify({"success": False, "error": "Gagal koneksi database"}), 500
         
-        # Get ALL products (biasa + lelang)
+    try:
+        cursor = connection.cursor(cursor_factory=RealDictCursor)
         products = []
         
-        # Get regular products
+        # 1. Ambil produk biasa
         cursor.execute("""
             SELECT 
-                no_SKU as sku, 
-                Name_product as name, 
-                Price as price,
+                no_sku as sku, 
+                name_product as name, 
+                price as price,
                 'biasa' as type,
                 CASE 
                     WHEN barcode_image IS NOT NULL AND barcode_image != '' THEN 1
                     ELSE 0 
                 END as has_barcode
             FROM produk_biasa 
-            ORDER BY Name_product
+            ORDER BY name_product
         """)
         regular = cursor.fetchall()
         products.extend(regular)
         
-        # Get auction products
+        # 2. Ambil produk lelang
         cursor.execute("""
             SELECT 
-                no_SKU as sku, 
-                Name_product as name, 
-                Price as price,
+                no_sku as sku, 
+                name_product as name, 
+                price as price,
                 'lelang' as type,
                 CASE 
                     WHEN barcode_image IS NOT NULL AND barcode_image != '' THEN 1
                     ELSE 0 
                 END as has_barcode
             FROM produk_lelang 
-            ORDER BY Name_product
+            ORDER BY name_product
         """)
         auction = cursor.fetchall()
         products.extend(auction)
-        
-        cursor.close()
-        conn.close()
         
         print(f"[DEBUG] Found {len(products)} products for barcode dropdown")
         
@@ -690,14 +671,14 @@ def api_products_for_barcode():
         print(f"[ERROR] api_products_for_barcode: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
     finally:
-        cursor.close()
-        sys.close()
+        if 'cursor' in locals(): cursor.close()
+        if connection: connection.close()
 
 @app.route("/api/barcode/<sku>/image")
 def get_barcode_image(sku):
     """Get existing barcode image"""
     sys = CashierSystem()
-    cursor = sys.db.cursor(dictionary=True)
+    cursor = sys.db.cursor(cursor_factory=RealDictCursor)
     
     try:
         # Check in produk_biasa
@@ -729,7 +710,6 @@ def get_barcode_image(sku):
         return jsonify({"success": False, "error": str(e)}), 500
     finally:
         cursor.close()
-        sys.close()
 
 @app.route("/api/barcode/generate_all", methods=['POST'])
 def generate_all_barcodes():
@@ -737,27 +717,25 @@ def generate_all_barcodes():
     if session.get('role') != 'admin':
         return jsonify({"error": "Unauthorized"}), 401
     
-    try:
-        import mysql.connector
-        conn = mysql.connector.connect(
-            host='localhost',
-            user='root',
-            password='',
-            database='db_kasir1'
-        )
-        generate_barcode_for_product = sys.generate_barcode_for_product  # Reuse existing function
-        cursor = conn.cursor(dictionary=True)
+    connection = Database.get_conn()
+    if not connection:
+        return jsonify({"success": False, "error": "Database connection failed"}), 500
         
-        # Cari produk tanpa barcode
+    try:
+        inventory = Inventory(connection)
+        cursor = connection.cursor(cursor_factory=RealDictCursor)
+        
+        # 1. Cari produk tanpa barcode di produk_biasa
         cursor.execute("""
-            SELECT no_SKU, Name_product, Price 
+            SELECT no_sku, name_product, price 
             FROM produk_biasa 
             WHERE barcode_image IS NULL OR barcode_image = ''
         """)
         biasa = cursor.fetchall()
         
+        # 2. Cari produk tanpa barcode di produk_lelang
         cursor.execute("""
-            SELECT no_SKU, Name_product, Price 
+            SELECT no_sku, name_product, price 
             FROM produk_lelang 
             WHERE barcode_image IS NULL OR barcode_image = ''
         """)
@@ -766,28 +744,46 @@ def generate_all_barcodes():
         all_products = biasa + lelang
         generated = 0
         
-        # Generate barcode untuk setiap produk
+        # 3. Generate barcode untuk setiap produk
         for product in all_products:
             try:
-                # Panggil fungsi generate barcode
-                barcode_data = generate_barcode_for_product(product['no_SKU'])
+                # Gunakan fungsi di logic.py
+                barcode_data = inventory.generate_product_barcode(
+                    product['no_sku'], 
+                    product['name_product'], 
+                    product['price']
+                )
+                
                 if barcode_data:
+                    # Update kolom barcode_image di database
+                    table = "produk_biasa" if any(p['no_sku'] == product['no_sku'] for p in biasa) else "produk_lelang"
+                    
+                    cursor.execute(f"""
+                        UPDATE {table} 
+                        SET barcode_image = %s 
+                        WHERE no_sku = %s
+                    """, (barcode_data, product['no_sku']))
+                    
                     generated += 1
-            except:
+            except Exception as e:
+                print(f"Gagal generate SKU {product['no_sku']}: {e}")
                 continue
         
-        cursor.close()
-        conn.close()
+        connection.commit()
         
         return jsonify({
             "success": True,
-            "message": f"Generated {generated} barcodes from {len(all_products)} products",
+            "message": f"Berhasil membuat {generated} barcode dari {len(all_products)} produk",
             "total": len(all_products),
             "generated": generated
         })
         
     except Exception as e:
+        if connection: connection.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        if 'cursor' in locals(): cursor.close()
+        if connection: connection.close()
 
 @app.route("/api/barcode/status")
 def api_barcode_status():
@@ -796,7 +792,7 @@ def api_barcode_status():
         return jsonify({"error": "Unauthorized"}), 401
     
     sys = CashierSystem()
-    cursor = sys.db.cursor(dictionary=True)
+    cursor = sys.db.cursor(cursor_factory=RealDictCursor)
     
     try:
         # Count total products
@@ -840,7 +836,6 @@ def api_barcode_status():
         return jsonify({"success": False, "error": str(e)}), 500
     finally:
         cursor.close()
-        sys.close()
 
 @app.route("/admin/history/monthly")
 def admin_monthly_report():
@@ -852,8 +847,6 @@ def admin_monthly_report():
     
     sys = CashierSystem()
     report = sys.transaction.history.get_monthly_report(year, month)
-    sys.close()
-    
     return jsonify(report)
 
 # ============================================
@@ -865,7 +858,7 @@ def generate_barcode(sku):
     """Generate barcode image untuk produk"""
     try:
         sys = CashierSystem()
-        cursor = sys.db.cursor(dictionary=True)
+        cursor = sys.db.cursor(cursor_factory=RealDictCursor)
         
         # Cek apakah produk ada
         cursor.execute("SELECT no_SKU, Name_product, Price FROM produk_biasa WHERE no_SKU = %s", (sku,))
@@ -878,7 +871,6 @@ def generate_barcode(sku):
         
         if not product:
             cursor.close()
-            sys.close()
             return jsonify({
                 "success": False,
                 "message": f"Produk dengan SKU {sku} tidak ditemukan"
@@ -892,7 +884,6 @@ def generate_barcode(sku):
             if result and result['barcode_image']:
                 # Barcode sudah ada di database
                 cursor.close()
-                sys.close()
                 return jsonify({
                     "success": True,
                     "sku": sku,
@@ -906,7 +897,6 @@ def generate_barcode(sku):
         # Generate barcode baru
         if not BARCODE_AVAILABLE:
             cursor.close()
-            sys.close()
             return jsonify({
                 "success": False,
                 "message": "Library barcode tidak terinstall. Install: pip install python-barcode"
@@ -947,7 +937,6 @@ def generate_barcode(sku):
             # Lanjutkan saja, mungkin kolom belum ada
         
         cursor.close()
-        sys.close()
         
         return jsonify({
             "success": True,
@@ -1001,7 +990,7 @@ def check_barcode_status(sku):
         return jsonify({"error": "Unauthorized"}), 401
     
     sys = CashierSystem()
-    cursor = sys.db.cursor(dictionary=True)
+    cursor = sys.db.cursor(cursor_factory=RealDictCursor)
     
     try:
         # Cek di produk biasa
@@ -1042,7 +1031,6 @@ def check_barcode_status(sku):
         return jsonify({"success": False, "error": str(e)}), 500
     finally:
         cursor.close()
-        sys.close()
 
 @app.route("/api/products/without_barcode")
 def api_products_without_barcode():
@@ -1051,7 +1039,7 @@ def api_products_without_barcode():
         return jsonify({"error": "Unauthorized"}), 401
     
     sys = CashierSystem()
-    cursor = sys.db.cursor(dictionary=True)
+    cursor = sys.db.cursor(cursor_factory=RealDictCursor)
     
     try:
         # Get products without barcode from produk_biasa
@@ -1095,7 +1083,6 @@ def api_products_without_barcode():
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
-        sys.close()
 
 @app.route("/api/print_barcode/<sku>")
 def print_barcode_label(sku):
@@ -1104,7 +1091,7 @@ def print_barcode_label(sku):
         return jsonify({"error": "Unauthorized"}), 401
     
     sys = CashierSystem()
-    cursor = sys.db.cursor(dictionary=True)
+    cursor = sys.db.cursor(cursor_factory=RealDictCursor)
     
     try:
         # Ambil data produk
@@ -1196,7 +1183,6 @@ def print_barcode_label(sku):
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
-        sys.close()
 
 # ============================================
 # ERROR HANDLERS
@@ -1230,4 +1216,3 @@ if __name__ == '__main__':
     print("=" * 50)
     
     app.run(debug=True, host='0.0.0.0', port=5000)
-

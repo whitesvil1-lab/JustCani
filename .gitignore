@@ -1,19 +1,29 @@
-<<<<<<< HEAD
-__pycache__/ 
-venv/ 
-.env 
-=======
-# Python minimal
-# Virtual environments
-.venv/
-env/
-venv/
-
-# Python cache
+# Python bytecode & cache
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Backup files
-*.backup
-*.bak
->>>>>>> 005f55548f23cb917d40d7f751462bd6cf1122f6
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Configuration & Secrets (SANGAT PENTING)
+.env
+.env.*
+
+# Local Database & Log
+*.db
+*.sqlite3
+*.log
+
+# Folder Barcode & Uploads (Biar data testing di laptop gak ikut ke upload)
+static/uploads/profile_pics/*
+!static/uploads/profile_pics/.gitkeep
+barcodes/
+
+# OS files
+.DS_Store
+Thumbs.db
