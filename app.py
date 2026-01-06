@@ -15,6 +15,12 @@ import cv2
 import numpy as np
 from pyzbar.pyzbar import decode
 import traceback
+# Di app.py, tambahkan setelah Flask app creation
+from flask_cors import CORS
+
+
+# Atau lebih spesifik:
+# CORS(app, resources={r"/api/*": {"origins": ["https://your-vercel-app.vercel.app", "http://localhost:5000"]}})
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
@@ -44,12 +50,41 @@ except ImportError:
 # ============================================
 # APP CONFIGURATION
 # ============================================
-
 app = Flask(__name__)
+CORS(app, 
+     resources={
+         r"/api/*": {
+             "origins": ["*"],  # Allow semua origins
+             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+             "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+             "supports_credentials": True
+         },
+         r"/*": {
+             "origins": ["*"],
+             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+             "allow_headers": ["Content-Type", "Authorization"]
+         }
+     })
+ 
+
 app.config['SECRET_KEY'] = os.environ.get(
     'SECRET_KEY', 
     'fallback-dev-key-hanya-untuk-local'  
 )
+
+
+# Debug info untuk Vercel
+@app.route("/api/debug/vercel")
+def debug_vercel():
+    """Debug khusus Vercel"""
+    return jsonify({
+        "status": "online",
+        "platform": "vercel" if os.environ.get('VERCEL') else "localhost",
+        "database_url_set": bool(os.environ.get('DATABASE_URL')),
+        "python_version": sys.version,
+        "flask_cors": "enabled",
+        "timestamp": datetime.now().isoformat()
+    })
 
 # Upload configuration
 UPLOAD_FOLDER = 'static/uploads/profile_pics'
@@ -60,9 +95,23 @@ app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
+
+if os.environ.get('VERCEL'):
+    print("🚀 Running on Vercel")
+    # Vercel menggunakan /tmp untuk writeable storage
+    app.config['UPLOAD_FOLDER'] = '/tmp/uploads/profile_pics'
+else:
+    app.config['UPLOAD_FOLDER'] = 'static/uploads/profile_pics'
 def create_upload_folder():
-    if not os.path.exists(UPLOAD_FOLDER):
-        os.makedirs(UPLOAD_FOLDER)
+    try:
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        print(f"✅ Upload folder: {app.config['UPLOAD_FOLDER']}")
+    except Exception as e:
+        print(f"⚠️ Could not create upload folder: {e}")
+
+# Panggil saat app start
+create_upload_folder()
 
 def process_and_save_image(file, user_id):
     if not PILLOW_AVAILABLE:

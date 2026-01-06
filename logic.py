@@ -20,17 +20,38 @@ except ImportError:
     print("INFO: python-barcode not installed. Barcode features limited.")
 # ============================================
 
+# Di logic.py atau Database class
 class Database:
     @staticmethod
     def get_conn():
         try:
-            db_url = os.environ.get('DATABASE_URL') or "postgresql://neondb_owner:npg_ptNaxkIwe4D9@ep-little-hat-ah5adtxh-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
-            return psycopg2.connect(db_url)
-                
+            # Untuk Vercel, gunakan environment variable
+            db_url = os.environ.get('DATABASE_URL')
+            
+            if not db_url:
+                print("⚠️ DATABASE_URL not found in env, using fallback")
+                # Fallback untuk local development
+                db_url = "postgresql://neondb_owner:npg_ptNaxkIwe4D9@ep-little-hat-ah5adtxh-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
+            
+            # Connect dengan timeout
+            conn = psycopg2.connect(
+                db_url,
+                connect_timeout=10,
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5
+            )
+            
+            print("✅ Database connected successfully")
+            return conn
+            
         except Exception as e:
-            print(f"Gagal koneksi database: {e}")
+            print(f"❌ Database connection failed: {e}")
+            # Log lebih detail untuk debugging
+            import traceback
+            traceback.print_exc()
             return None
-
 class Inventory:
     def __init__(self, db_conn):
         self.db = db_conn
