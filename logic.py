@@ -1,6 +1,7 @@
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import bcrypt
+import traceback
 import json
 import random
 import os
@@ -29,42 +30,37 @@ class Database:
     @staticmethod
     def get_conn():
         try:
-            # Debug: Lihat environment variable
-            print(f"[DEBUG] DATABASE_URL available: {'DATABASE_URL' in os.environ}")
+            # Debug info
+            print(f"[DATABASE] Connecting to database...")
             
-            # Untuk Vercel, gunakan environment variable
+            # Gunakan DATABASE_URL dari environment Vercel
             db_url = os.environ.get('DATABASE_URL')
             
             if not db_url:
-                print("⚠️ DATABASE_URL not found in env, checking for POSTGRES_URL...")
-                db_url = os.environ.get('POSTGRES_URL')  # Alternative for Vercel
+                print("[DATABASE] ⚠️ DATABASE_URL not found, using fallback")
+                # Fallback untuk local development
+                db_url = "postgresql://neondb_owner:npg_ptNaxkIwe4D9@ep-little-hat-ah5adtxh-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
             
-            if not db_url:
-                print("⚠️ No database URL found in environment")
-                return None
+            print(f"[DATABASE] URL: {db_url[:50]}...")
             
-            print(f"[DEBUG] Using database URL: {db_url[:50]}...")  # Log first 50 chars
-            
-            # Connect ke PostgreSQL
+            # Connect dengan timeout
             conn = psycopg2.connect(
                 db_url,
                 connect_timeout=10,
                 keepalives=1,
-                keepalives_idle=30
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5
             )
             
-            print("✅ Database connected successfully!")
+            print("[DATABASE] ✅ Connected successfully")
             return conn
             
-        except psycopg2.Error as e:
-            print(f"❌ PostgreSQL Error: {e}")
-            print(f"Error details: {e.pgerror if hasattr(e, 'pgerror') else 'No details'}")
-            return None
         except Exception as e:
-            print(f"❌ General Database Error: {e}")
-            import traceback
+            print(f"[DATABASE] ❌ Connection failed: {e}")
             traceback.print_exc()
             return None
+
 class Inventory:
     def __init__(self, db_conn):
         self.db = db_conn
@@ -539,67 +535,96 @@ class Transaction:
             cursor.close()
 class CashierSystem:
     def __init__(self):
+        print("[CASHIERSYSTEM] Initializing...")
         self.db = Database.get_conn()
-        self.inventory = Inventory(self.db)
-        self.transaction = Transaction(self.db)
+        if self.db:
+            self.inventory = Inventory(self.db)
+            self.transaction = Transaction(self.db)
+            print("[CASHIERSYSTEM] ✅ Initialized successfully")
+        else:
+            print("[CASHIERSYSTEM] ❌ Failed to initialize")
+            self.inventory = None
+            self.transaction = None
     
     @staticmethod
     def hash_password(password):
         salt = bcrypt.gensalt()
-        return bcrypt.hashpw(password.encode('utf-8'), salt)
+        return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
     
     @staticmethod
     def check_password(hashed_password, password):
-        if isinstance(hashed_password, str):
-            hashed_password = hashed_password.encode('utf-8')
-        return bcrypt.checkpw(password.encode('utf-8'), hashed_password)
+        try:
+            if hashed_password is None:
+                return False
+                
+            # Jika hashed_password adalah string, encode ke bytes
+            if isinstance(hashed_password, str):
+                hashed_bytes = hashed_password.encode('utf-8')
+            else:
+                hashed_bytes = hashed_password
+            
+            return bcrypt.checkpw(password.encode('utf-8'), hashed_bytes)
+        except Exception as e:
+            print(f"[CHECK_PASSWORD ERROR] {e}")
+            return False
 
     def login_user(self, email_or_username, password):
-        """Login dengan email ATAU username"""
-        if not self.db: return None
+        """Login dengan email ATAU username - FIXED FOR VERCELL"""
+        print(f"[LOGIN] Attempting login for: {email_or_username}")
+        
+        if not self.db: 
+            print("[LOGIN] ❌ No database connection")
+            return None
+            
         cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
             sql = """
             SELECT id, username, email, password_hash, role, profile_pic
             FROM users 
             WHERE email = %s OR username = %s
+            LIMIT 1
             """
+            
+            print(f"[LOGIN] Executing query: {sql}")
             cursor.execute(sql, (email_or_username, email_or_username))
             user = cursor.fetchone()
-        
-            if user and self.check_password(user['password_hash'], password):
-                return {
-                'id': user['id'],
-                'username': user['username'],
-                'email': user['email'],
-                'role': user['role'],
-                'profile_pic': user['profile_pic'] or '/static/img/default-avatar.png'
-                }
-            return None
-        except psycopg2.Error as e:
-            print(f"Error login: {e}")
-            return None
-        finally:
-            cursor.close()
-    def register_user(self, username, email, whatsapp, password, role='kasir'):
-        if not self.db: return False
-        cursor = self.db.cursor(cursor_factory=RealDictCursor)
-        try:
-            hashed_password = self.hash_password(password)
             
-            sql = """
-            INSERT INTO users (username, email, whatsapp, password_hash, role) 
-            VALUES (%s, %s, %s, %s, %s)
-            """
-            cursor.execute(sql, (username, email, whatsapp, hashed_password, role))
-            self.db.commit()
-            return True
+            if user:
+                print(f"[LOGIN] User found: {user['username']}")
+                print(f"[LOGIN] Hashed password type: {type(user['password_hash'])}")
+                print(f"[LOGIN] Hashed password sample: {str(user['password_hash'])[:50] if user['password_hash'] else 'NULL'}")
+                
+                # Check password
+                is_password_correct = self.check_password(user['password_hash'], password)
+                print(f"[LOGIN] Password check result: {is_password_correct}")
+                
+                if is_password_correct:
+                    print(f"[LOGIN] ✅ Login successful for {user['username']}")
+                    return {
+                        'id': user['id'],
+                        'username': user['username'],
+                        'email': user['email'],
+                        'role': user['role'],
+                        'profile_pic': user['profile_pic'] or '/static/img/default-avatar.png'
+                    }
+                else:
+                    print(f"[LOGIN] ❌ Password incorrect")
+            else:
+                print(f"[LOGIN] ❌ User not found")
+                
+            return None
+            
         except psycopg2.Error as e:
-            print(f"Error register: {e}")
-            self.db.rollback()
-            return False
+            print(f"[LOGIN ERROR] Database error: {e}")
+            print(f"Error details: {e.pgerror if hasattr(e, 'pgerror') else 'N/A'}")
+            return None
+        except Exception as e:
+            print(f"[LOGIN ERROR] General error: {e}")
+            traceback.print_exc()
+            return None
         finally:
             cursor.close()
+            print("[LOGIN] Cursor closed")
 
     def close(self):
         if self.db: self.db.close()

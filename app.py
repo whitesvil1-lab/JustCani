@@ -13,6 +13,8 @@ from io import BytesIO
 import traceback
 # Di app.py, tambahkan setelah Flask app creation
 from flask_cors import CORS
+import bcrypt  # <-- TAMBAHKAN INI
+
 
 
 # Atau lebih spesifik:
@@ -43,25 +45,25 @@ except ImportError:
 # APP CONFIGURATION
 # ============================================
 app = Flask(__name__)
+app.config.update(
+    SECRET_KEY=os.environ.get('SECRET_KEY', 'fallback-dev-key-hanya-untuk-local'),
+    SESSION_COOKIE_SECURE=True,  
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
+    SESSION_TYPE='filesystem'  # Atau 'null' untuk serverless
+)
+
 CORS(app, 
      resources={
          r"/api/*": {
-             "origins": ["*"],  # Allow semua origins
-             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-             "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
-             "supports_credentials": True
-         },
-         r"/*": {
              "origins": ["*"],
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-             "allow_headers": ["Content-Type", "Authorization"]
+             "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+             "supports_credentials": True  
          }
-     })
- 
-
-app.config['SECRET_KEY'] = os.environ.get(
-    'SECRET_KEY', 
-    'fallback-dev-key-hanya-untuk-local'  
+     },
+     supports_credentials=True  
 )
 
 
@@ -545,6 +547,8 @@ def debug_tables():
     except Exception as e:
         return f"<pre>Error: {str(e)}</pre>"
 
+
+
 # ============================================
 # ROUTES - ADMIN FEATURES
 # ============================================
@@ -821,6 +825,74 @@ def debug_lelang_products():
         }), 500
 
 
+@app.route("/api/find_product_by_sku", methods=['POST'])
+def api_find_product_by_sku():
+    """Cari produk berdasarkan SKU - VERSI LEBIH SIMPLE"""
+    if not session.get('user_id'):
+        return jsonify({"success": False, "message": "Silakan login terlebih dahulu"})
+    
+    try:
+        data = request.json
+        sku = data.get('sku', '').strip()
+        
+        if not sku:
+            return jsonify({"success": False, "message": "SKU tidak boleh kosong"})
+        
+        print(f"[FIND BY SKU] Looking for SKU: {sku}")
+        
+        # Cari di database
+        sys = CashierSystem()
+        cursor = sys.db.cursor(cursor_factory=RealDictCursor)
+        
+        # Cari di produk biasa
+        cursor.execute("""
+            SELECT 
+                no_sku as no_SKU,
+                name_product as Name_product,
+                price as Price,
+                stok,
+                'biasa' as type
+            FROM produk_biasa 
+            WHERE no_sku = %s
+        """, (sku,))
+        
+        product = cursor.fetchone()
+        
+        # Jika tidak ditemukan, cari di lelang
+        if not product:
+            cursor.execute("""
+                SELECT 
+                    no_sku as no_SKU,
+                    name_product as Name_product,
+                    price as Price,
+                    'lelang' as type
+                FROM produk_lelang 
+                WHERE no_sku = %s
+            """, (sku,))
+            product = cursor.fetchone()
+        
+        cursor.close()
+        
+        if product:
+            print(f"[FIND BY SKU] Found: {product['Name_product']}")
+            return jsonify({
+                "success": True,
+                "product": product,
+                "message": "Produk ditemukan"
+            })
+        else:
+            print(f"[FIND BY SKU] Not found: {sku}")
+            return jsonify({
+                "success": False, 
+                "message": f"Produk dengan SKU {sku} tidak ditemukan"
+            })
+        
+    except Exception as e:
+        print(f"[FIND BY SKU ERROR] {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": f"Error: {str(e)}"})
+    
 
 # api lelang
 
@@ -1466,6 +1538,211 @@ def api_barcode_status():
     finally:
         cursor.close()
 
+@app.route("/api/process_barcode", methods=['POST'])
+def api_process_barcode():
+    """API untuk process barcode dari gambar - LIGHTWEIGHT VERSION"""
+    if not session.get('user_id'):
+        return jsonify({"success": False, "message": "Silakan login terlebih dahulu"})
+    
+    try:
+        if 'barcode_image' not in request.files:
+            return jsonify({"success": False, "message": "Tidak ada gambar"})
+        
+        file = request.files['barcode_image']
+        
+        if file.filename == '':
+            return jsonify({"success": False, "message": "File tidak dipilih"})
+        
+        # Simpan file sementara
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+            file.save(tmp.name)
+            tmp_path = tmp.name
+        
+        try:
+            # Gunakan pyzbar untuk decode barcode (lebih ringan dari opencv)
+            from pyzbar.pyzbar import decode
+            from PIL import Image
+            
+            # Buka gambar dengan PIL
+            img = Image.open(tmp_path)
+            
+            # Decode barcode
+            decoded_objects = decode(img)
+            
+            if decoded_objects:
+                # Ambil barcode pertama yang ditemukan
+                barcode_data = decoded_objects[0].data.decode('utf-8')
+                barcode_type = decoded_objects[0].type
+                
+                print(f"[BARCODE] Found: {barcode_data} (Type: {barcode_type})")
+                
+                return jsonify({
+                    "success": True,
+                    "barcode": barcode_data,
+                    "type": barcode_type,
+                    "message": "Barcode berhasil dipindai"
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": "Tidak ada barcode ditemukan dalam gambar"
+                })
+                
+        finally:
+            # Hapus file temporary
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        
+    except ImportError as e:
+        print(f"[BARCODE] Library not available: {e}")
+        # Fallback ke base64 processing jika pyzbar tidak tersedia
+        try:
+            # Simple fallback: coba parse dari data URL jika ada
+            if request.form.get('image_data'):
+                # Handle base64 image data
+                pass
+            return jsonify({
+                "success": False,
+                "message": "Barcode scanner tidak tersedia di server",
+                "fallback": "Gunakan manual input"
+            })
+        except:
+            return jsonify({
+                "success": False, 
+                "message": "Scanner tidak tersedia"
+            })
+    except Exception as e:
+        print(f"[BARCODE ERROR] {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": f"Error: {str(e)}"})
+
+@app.route("/api/find_product_by_barcode", methods=['POST'])
+def api_find_product_by_barcode():
+    """Cari produk berdasarkan barcode/SKU - VERSI DIPERBAIKI"""
+    if not session.get('user_id'):
+        return jsonify({"success": False, "message": "Silakan login terlebih dahulu"})
+    
+    try:
+        data = request.json
+        barcode = data.get('barcode', '').strip()
+        
+        if not barcode:
+            return jsonify({"success": False, "message": "Barcode tidak boleh kosong"})
+        
+        print(f"[FIND PRODUCT] Looking for barcode: {barcode}")
+        
+        # Cari di database
+        sys = CashierSystem()
+        cursor = sys.db.cursor(cursor_factory=RealDictCursor)
+        
+        # Cari berdasarkan SKU (biasanya barcode = SKU)
+        # Cari di produk biasa - PERBAIKAN: gunakan kolom yang benar
+        cursor.execute("""
+            SELECT 
+                no_sku as "no_SKU",
+                name_product as "Name_product",
+                price as "Price",
+                stok,
+                'biasa' as type
+            FROM produk_biasa 
+            WHERE no_sku = %s
+        """, (barcode,))
+        
+        product = cursor.fetchone()
+        
+        # Jika tidak ditemukan, cari di lelang
+        if not product:
+            cursor.execute("""
+                SELECT 
+                    no_sku as "no_SKU",
+                    name_product as "Name_product",
+                    price as "Price",
+                    'lelang' as type
+                FROM produk_lelang 
+                WHERE no_sku = %s
+            """, (barcode,))
+            product = cursor.fetchone()
+        
+        cursor.close()
+        
+        if product:
+            print(f"[FIND PRODUCT] Found: {product['Name_product']}")
+            return jsonify({
+                "success": True,
+                "product": product,
+                "message": "Produk ditemukan"
+            })
+        else:
+            print(f"[FIND PRODUCT] Not found: {barcode}")
+            return jsonify({
+                "success": False, 
+                "message": f"Produk dengan barcode {barcode} tidak ditemukan"
+            })
+        
+    except Exception as e:
+        print(f"[FIND PRODUCT ERROR] {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "message": f"Error: {str(e)}"})
+
+@app.route("/api/test_barcode", methods=['GET'])
+def api_test_barcode():
+    """Test endpoint untuk cek library barcode"""
+    try:
+        # Cek apakah pyzbar tersedia
+        from pyzbar.pyzbar import decode
+        from PIL import Image
+        
+        # Buat barcode test image
+        if BARCODE_AVAILABLE:
+            import barcode
+            from barcode.writer import ImageWriter
+            
+            code128 = barcode.get_barcode_class('code128')
+            barcode_instance = code128("TEST123", writer=ImageWriter())
+            
+            buffer = BytesIO()
+            barcode_instance.write(buffer)
+            buffer.seek(0)
+            
+            # Test decode
+            img = Image.open(buffer)
+            decoded = decode(img)
+            
+            return jsonify({
+                "success": True,
+                "pyzbar_available": True,
+                "barcode_available": True,
+                "test_decode": len(decoded) > 0,
+                "decoded_data": decoded[0].data.decode('utf-8') if decoded else None
+            })
+        else:
+            return jsonify({
+                "success": True,
+                "pyzbar_available": True,
+                "barcode_available": False,
+                "message": "Python-barcode not installed"
+            })
+            
+    except ImportError as e:
+        return jsonify({
+            "success": False,
+            "pyzbar_available": False,
+            "error": str(e),
+            "message": "Install: pip install pyzbar pillow"
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "message": "Barcode test failed"
+        })
+
+
 @app.route("/admin/history/monthly")
 def admin_monthly_report():
     if session.get('role') != 'admin':
@@ -1803,6 +2080,112 @@ def not_found(error):
 def internal_error(error):
     return render_template('500.html'), 500
 
+
+@app.route("/api/debug/create_test_user", methods=['POST'])
+def debug_create_test_user():
+    """Create test user for debugging"""
+    if os.environ.get('VERCEL'):  # Hanya untuk development
+        return jsonify({'error': 'Not allowed in production'}), 403
+    
+    try:
+        data = request.json
+        username = data.get('username', 'testuser')
+        email = data.get('email', 'test@example.com')
+        password = data.get('password', 'test123')
+        role = data.get('role', 'kasir')
+        
+        sys = CashierSystem()
+        if not sys.db:
+            return jsonify({'error': 'Database not connected'}), 500
+        
+        cursor = sys.db.cursor()
+        
+        # Hash password
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        
+        # Insert user
+        cursor.execute("""
+            INSERT INTO users (username, email, password_hash, role)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (username) DO UPDATE 
+            SET password_hash = EXCLUDED.password_hash
+            RETURNING id
+        """, (username, email, hashed_password.decode('utf-8'), role))
+        
+        sys.db.commit()
+        user_id = cursor.fetchone()[0]
+        cursor.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Test user created/updated: {username}',
+            'user_id': user_id,
+            'login_with': f'Username: {username} or Email: {email}',
+            'password': password
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+
+# ============================================
+#   debug session info
+# ============================================
+@app.route("/api/debug/session")
+def debug_session():
+    """Debug session information"""
+    return jsonify({
+        'user_id': session.get('user_id'),
+        'username': session.get('username'),
+        'email': session.get('email'),
+        'role': session.get('role'),
+        'session_keys': list(session.keys()),
+        'session_id': session.sid if hasattr(session, 'sid') else 'N/A'
+    })
+
+@app.route("/api/debug/test_login/<email_or_username>")
+def debug_test_login(email_or_username):
+    """Test login system directly"""
+    try:
+        sys = CashierSystem()
+        user = sys.login_user(email_or_username, "test")  # Test dengan password dummy
+        
+        return jsonify({
+            'success': user is not None,
+            'user_found': user,
+            'database_connected': sys.db is not None,
+            'tested_with': email_or_username
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/debug/check_user/<email_or_username>")
+def debug_check_user(email_or_username):
+    """Check if user exists in database"""
+    try:
+        conn = Database.get_conn()
+        if not conn:
+            return jsonify({'error': 'No database connection'}), 500
+            
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("""
+            SELECT id, username, email, role, password_hash IS NOT NULL as has_password
+            FROM users 
+            WHERE email = %s OR username = %s
+            LIMIT 1
+        """, (email_or_username, email_or_username))
+        
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'found': user is not None,
+            'user': user
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 # ============================================
 # MAIN ENTRY POINT
 # ============================================

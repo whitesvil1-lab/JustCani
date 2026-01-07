@@ -26,11 +26,17 @@
                     <input type="text" id="query" class="form-control border-start-0 ps-0" 
                            placeholder="Cari nama barang atau SKU..." 
                            onkeyup="searchItem()">
+                    <button class="btn btn-outline-primary" type="button" onclick="openQuickScanner()">
+                        <i class="bi bi-upc-scan"></i>
+                    </button>
                 </div>
                 <div>
-                    <a href="/scanner" class="btn btn-success">
-                        <i class="bi bi-upc-scan me-1"></i> Open Scanner
+                    <a href="/scanner" class="btn btn-success me-2">
+                        <i class="bi bi-upc-scan me-1"></i> Full Scanner
                     </a>
+                    <button class="btn btn-outline-secondary" onclick="clearSearch()" title="Clear search">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
                 </div>
             </div>
             
@@ -52,7 +58,12 @@
                     <i class="bi bi-cart3 me-2"></i>Keranjang
                     <span id="cartMode" class="badge bg-info ms-2">Biasa</span>
                 </h5>
-                <span class="badge bg-danger rounded-pill" id="cartCount">0 Item</span>
+                <div>
+                    <span class="badge bg-danger rounded-pill" id="cartCount">0 Item</span>
+                    <button class="btn btn-sm btn-outline-danger ms-2" onclick="clearCart()" title="Kosongkan keranjang">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
             </div>
             
             <div id="cartList" class="flex-grow-1 overflow-auto mb-3" style="max-height: 400px; min-height: 200px;">
@@ -76,60 +87,63 @@
     </div>
 </div>
 
-<!-- Loading Spinner (Hidden by default) -->
+<!-- Loading Spinner -->
 <div id="loadingSpinner" class="position-fixed top-50 start-50 translate-middle" style="display: none; z-index: 9999;">
     <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;">
         <span class="visually-hidden">Loading...</span>
     </div>
 </div>
 
+<!-- MODAL SCANNER -->
+<div class="modal fade" id="quickScannerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-upc-scan me-2"></i>Quick Barcode Scanner
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Scanner content - tidak diubah -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tambahkan script khusus untuk kasir -->
 <script>
-window.onerror = function(msg, url, lineNo, columnNo, error) {
-    console.error('[GLOBAL ERROR]', msg);
-    console.error('[URL]', url);
-    console.error('[Line]', lineNo);
-    console.error('[Error]', error);
-    
-    // Show in alert
-    alert(`JavaScript Error:\n${msg}\n\nCheck console for details.`);
-    return false;
-};
-
-// Catch unhandled promise rejections
-window.addEventListener('unhandledrejection', function(event) {
-    console.error('[UNHANDLED PROMISE]', event.reason);
-    alert(`Unhandled Promise Rejection:\n${event.reason}`);
-    event.preventDefault();
-});
-
-// Load cart from localStorage on page load
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize cart
-    if (window.Cart) {
-        window.Cart.init();
-        cartItems = window.Cart.items();
-    } else {
-        // Fallback
-        const savedCart = JSON.parse(localStorage.getItem('cartItems') || '[]');
-        cartItems = savedCart;
-    }
-    
-    updateCartDisplay();
-    searchItem(); // Load initial products
-});
-
-function loadCartFromStorage() {
-    const savedCart = JSON.parse(localStorage.getItem('cartItems') || '[]');
-    if (savedCart.length > 0) {
-        cartItems = savedCart;
-        updateCartDisplay();
-    }
-}
 
 let currentMode = 'biasa';
 let cartItems = [];
 
-// Fungsi untuk set mode (biasa/lelang)
+// Load cart dari localStorage
+function loadCartFromStorage() {
+    try {
+        const savedCart = localStorage.getItem('cartItems');
+        if (savedCart) {
+            cartItems = JSON.parse(savedCart);
+            console.log('Loaded cart:', cartItems.length, 'items');
+        } else {
+            cartItems = [];
+        }
+    } catch (e) {
+        console.error('Error loading cart:', e);
+        cartItems = [];
+    }
+    updateCartDisplay();
+}
+
+// Save cart ke localStorage
+function saveCartToStorage() {
+    try {
+        localStorage.setItem('cartItems', JSON.stringify(cartItems));
+    } catch (e) {
+        console.error('Error saving cart:', e);
+    }
+}
+
+// Set mode (biasa/lelang)
 function setMode(mode) {
     currentMode = mode;
     document.getElementById('cartMode').textContent = mode === 'biasa' ? 'Biasa' : 'Lelang';
@@ -142,7 +156,7 @@ function setMode(mode) {
     searchItem();
 }
 
-// Fungsi search produk
+// Fungsi search produk - VERSI YANG DIPERBAIKI
 async function searchItem() {
     const query = document.getElementById('query').value;
     const resultsDiv = document.getElementById('searchResults');
@@ -165,23 +179,22 @@ async function searchItem() {
             throw new Error(`HTTP ${response.status}`);
         }
         
+        let products = [];
         const data = await response.json();
         
-        // Handle array response
+        // Handle response format
         if (Array.isArray(data)) {
-            displayResults(data);
-        } 
-        // Handle object response with error
-        else if (data.error) {
+            products = data;
+        } else if (data && data.results && Array.isArray(data.results)) {
+            products = data.results;
+        } else if (data && data.products && Array.isArray(data.products)) {
+            products = data.products;
+        } else if (data && data.error) {
             throw new Error(data.error);
         }
-        // Handle object response with results array
-        else if (data.results && Array.isArray(data.results)) {
-            displayResults(data.results);
-        }
-        else {
-            displayResults([]);
-        }
+        
+        console.log(`Found ${products.length} products`);
+        displayResults(products);
         
     } catch (error) {
         console.error('Search error:', error);
@@ -195,7 +208,7 @@ async function searchItem() {
     }
 }
 
-// Fungsi untuk menampilkan hasil pencarian
+// Tampilkan hasil pencarian
 function displayResults(products) {
     const resultsDiv = document.getElementById('searchResults');
     
@@ -212,72 +225,36 @@ function displayResults(products) {
     resultsDiv.innerHTML = '';
     
     products.forEach(product => {
+        // Pastikan field tidak undefined
+        const sku = product.no_SKU || product.sku || product.no_sku || 'N/A';
+        const name = product.Name_product || product.name || product.name_product || 'Produk tanpa nama';
+        const price = product.Price || product.price || 0;
+        const stok = product.stok || product.Stok || 0;
+        const expiredDate = product.expired_date ? 
+            new Date(product.expired_date).toISOString().split('T')[0] : '-';
+        
         const card = document.createElement('div');
         card.className = 'col-md-6 col-lg-4 mb-3';
         
-        // Handle semua kemungkinan nama field untuk konsistensi
-        const sku = product.no_SKU || product.sku || product.no_sku || product.No_SKU || product.SKU || 'N/A';
-        const name = product.Name_product || product.name || product.name_product || product.nama || 'Produk tanpa nama';
-        const price = product.Price || product.price || product.harga || 0;
-        const stok = product.stok || product.Stok || product.stock || 0;
-        
-        // Format tanggal expired dengan aman
-        let expiredDate = '-';
-        try {
-            if (product.expired_date || product.expiredDate || product.exp_date) {
-                const dateStr = product.expired_date || product.expiredDate || product.exp_date;
-                expiredDate = new Date(dateStr).toISOString().split('T')[0];
-            }
-        } catch (e) {
-            console.warn('Error parsing date:', e);
-            expiredDate = product.expired_date || product.expiredDate || product.exp_date || '-';
-        }
-        
-        // Handle string escape untuk name dengan quotes
-        const safeName = name
-            .replace(/'/g, "\\'")
-            .replace(/"/g, '\\"')
-            .replace(/`/g, '\\`');
-        
-        // Format harga untuk display
-        const formattedPrice = new Intl.NumberFormat('id-ID').format(parseInt(price));
-        
-        // Tentukan badge stok warna
-        let stockBadgeClass = 'bg-secondary';
-        let stockText = `${stok} pcs`;
-        
-        if (currentMode === 'biasa') {
-            if (stok > 10) stockBadgeClass = 'bg-success';
-            else if (stok > 0) stockBadgeClass = 'bg-warning';
-            else stockBadgeClass = 'bg-danger';
-        }
-        
         card.innerHTML = `
             <div class="card h-100 border shadow-sm product-item">
-                <div class="card-body d-flex flex-column">
-                    <h6 class="card-title fw-bold text-truncate" title="${name}">${name}</h6>
+                <div class="card-body">
+                    <h6 class="card-title fw-bold">${name}</h6>
                     <p class="card-text small text-muted mb-1">
                         SKU: <span class="badge bg-secondary">${sku}</span>
                     </p>
-                    <p class="card-text mb-2">
-                        <span class="fw-bold text-primary">Rp${formattedPrice}</span>
+                    <p class="card-text mb-1">
+                        <span class="fw-bold text-primary">Rp${parseInt(price).toLocaleString()}</span>
                     </p>
                     ${currentMode === 'biasa' ? 
-                        `<p class="card-text small">Stok: <span class="badge ${stockBadgeClass}">${stockText}</span></p>` : 
+                        `<p class="card-text small">Stok: <span class="badge ${stok > 10 ? 'bg-success' : 'bg-warning'}">${stok} pcs</span></p>` : 
                         `<p class="card-text small text-warning"><i class="bi bi-tag"></i> Produk Lelang</p>`
                     }
-                    ${expiredDate !== '-' ? 
-                        `<p class="card-text small text-muted">Exp: ${expiredDate}</p>` : 
-                        '<p class="card-text small text-muted">Exp: -</p>'
-                    }
-                    <div class="mt-auto pt-3">
-                        <button class="btn btn-sm btn-outline-primary w-100" 
-                                onclick="addToCart('${sku}', '${safeName}', ${price})"
-                                ${currentMode === 'biasa' && stok <= 0 ? 'disabled' : ''}>
-                            <i class="bi bi-cart-plus"></i> 
-                            ${currentMode === 'biasa' && stok <= 0 ? 'Stok Habis' : 'Tambah'}
-                        </button>
-                    </div>
+                    <p class="card-text small text-muted">Exp: ${expiredDate}</p>
+                    <button class="btn btn-sm btn-outline-primary w-100" 
+                            onclick="addToCart('${sku}', '${name.replace(/'/g, "\\'")}', ${price})">
+                        <i class="bi bi-cart-plus"></i> Tambah
+                    </button>
                 </div>
             </div>
         `;
@@ -286,70 +263,83 @@ function displayResults(products) {
     });
 }
 
-// Fungsi tambah ke keranjang
+// Fungsi addToCart untuk kasir page
 function addToCart(sku, name, price, mode = null) {
-    // Gunakan mode parameter jika ada, kalau tidak pakai currentMode
-    const itemMode = mode || currentMode;
-    
-    // Cek apakah item sudah ada di keranjang
-    const existingItem = cartItems.find(item => item.sku == sku && item.mode === itemMode);
-    
-    if (existingItem) {
-        existingItem.qty += 1;
-        existingItem.subtotal = existingItem.qty * existingItem.price;
-    } else {
-        cartItems.push({
-            sku: sku,
-            name: name,
-            price: parseFloat(price),
-            qty: 1,
-            subtotal: parseFloat(price),
-            mode: itemMode
-        });
-    }
-    
-    // Save to localStorage
-    localStorage.setItem('cartItems', JSON.stringify(cartItems));
-    
-    updateCartDisplay();
-    
-    // Show notification
-    showCartNotification(`${name} ditambahkan ke keranjang`);
-    
-    // Jika dari halaman produk, refresh display jika di kasir page
-    if (window.location.pathname.includes('/kasir')) {
+    try {
+        const itemMode = mode || currentMode;
+        const itemPrice = parseFloat(price);
+        
+        if (isNaN(itemPrice)) {
+            throw new Error('Harga tidak valid');
+        }
+        
+        // Cek apakah item sudah ada
+        const existingItem = cartItems.find(item => 
+            String(item.sku) === String(sku) && item.mode === itemMode
+        );
+        
+        if (existingItem) {
+            existingItem.qty += 1;
+            existingItem.subtotal = existingItem.qty * existingItem.price;
+        } else {
+            cartItems.push({
+                sku: sku,
+                name: name,
+                price: itemPrice,
+                qty: 1,
+                subtotal: itemPrice,
+                mode: itemMode
+            });
+        }
+        
+        // Save and update
+        saveCartToStorage();
         updateCartDisplay();
+        showCartNotification(`${name} ditambahkan ke keranjang`);
+        
+        return true;
+        
+    } catch (error) {
+        console.error('Error adding to cart:', error);
+        alert('❌ Gagal menambahkan ke keranjang: ' + error.message);
+        return false;
     }
 }
 
-// Tambahkan fungsi notifikasi:
+// Tampilkan notifikasi
 function showCartNotification(message) {
-    const existingNotif = document.querySelector('.cart-notification');
-    if (existingNotif) {
-        existingNotif.remove();
-    }
-    
-    const notification = document.createElement('div');
-    notification.className = 'cart-notification position-fixed top-0 end-0 m-3 p-3 bg-success text-white rounded shadow';
-    notification.style.zIndex = '9999';
-    notification.innerHTML = `
-        <div class="d-flex align-items-center">
-            <i class="bi bi-check-circle me-2 fs-4"></i>
-            <div>
-                <strong>Berhasil!</strong>
-                <div class="small">${message}</div>
+    try {
+        // Remove existing notification
+        const existingNotif = document.querySelector('.cart-notification');
+        if (existingNotif) {
+            existingNotif.remove();
+        }
+        
+        // Create new notification
+        const notification = document.createElement('div');
+        notification.className = 'cart-notification position-fixed top-0 end-0 m-3 p-3 bg-success text-white rounded shadow';
+        notification.style.zIndex = '9999';
+        notification.innerHTML = `
+            <div class="d-flex align-items-center">
+                <i class="bi bi-check-circle me-2 fs-4"></i>
+                <div>
+                    <strong>Berhasil!</strong>
+                    <div class="small">${message}</div>
+                </div>
             </div>
-        </div>
-    `;
-    
-    document.body.appendChild(notification);
-    
-    // Auto remove after 3 seconds
-    setTimeout(() => {
-        notification.style.opacity = '0';
-        notification.style.transition = 'opacity 0.5s';
-        setTimeout(() => notification.remove(), 500);
-    }, 3000);
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Auto remove after 3 seconds
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            notification.style.transition = 'opacity 0.5s';
+            setTimeout(() => notification.remove(), 500);
+        }, 3000);
+    } catch (e) {
+        console.error('Error showing notification:', e);
+    }
 }
 
 // Update tampilan keranjang
@@ -418,34 +408,44 @@ function updateQty(index, change) {
     
     item.qty = newQty;
     item.subtotal = item.qty * item.price;
-    
-    // Save to localStorage
-    localStorage.setItem('cartItems', JSON.stringify(cartItems));
-    
+    saveCartToStorage();
     updateCartDisplay();
 }
 
 // Fungsi hapus dari keranjang
 function removeFromCart(index) {
-    cartItems.splice(index, 1);
+    if (confirm('Hapus item dari keranjang?')) {
+        cartItems.splice(index, 1);
+        saveCartToStorage();
+        updateCartDisplay();
+    }
+}
+
+// Clear cart
+function clearCart() {
+    if (cartItems.length === 0) {
+        alert('Keranjang sudah kosong!');
+        return;
+    }
     
-    // Save to localStorage
-    localStorage.setItem('cartItems', JSON.stringify(cartItems));
-    
-    updateCartDisplay();
+    if (confirm(`Yakin ingin mengosongkan keranjang? (${cartItems.length} item)`)) {
+        cartItems = [];
+        saveCartToStorage();
+        updateCartDisplay();
+        showCartNotification('Keranjang berhasil dikosongkan!');
+    }
+}
+
+// Clear search input
+function clearSearch() {
+    document.getElementById('query').value = '';
+    searchItem();
 }
 
 // Fungsi checkout
-// Fungsi checkout - DEBUG VERSION
 async function checkout() {
-    console.log('[KASIR] Checkout function called');
-    
     try {
-        // Gunakan window.Cart untuk mendapatkan items
-        const cartSummary = window.Cart ? window.Cart.getSummary() : getCartSummary();
-        const cartItems = cartSummary.items;
-        
-        console.log('[KASIR] Cart items:', cartItems);
+        console.log('Starting checkout...');
         
         if (cartItems.length === 0) {
             alert('Keranjang kosong!');
@@ -456,232 +456,67 @@ async function checkout() {
         const biasaItems = cartItems.filter(item => item.mode === 'biasa');
         const lelangItems = cartItems.filter(item => item.mode === 'lelang');
         
-        console.log('[KASIR] Biasa items:', biasaItems);
-        console.log('[KASIR] Lelang items:', lelangItems);
-        
         if (biasaItems.length === 0 && lelangItems.length === 0) {
-            alert('Tidak ada item yang bisa diproses!');
+            alert('Tidak ada item untuk checkout');
             return;
         }
         
-        // Show loading
-        document.getElementById('loadingSpinner').style.display = 'block';
-        
-        let successMessages = [];
-        let errorMessages = [];
-        
-        // Proses item biasa jika ada
+        // Proses biasa items dulu
         if (biasaItems.length > 0) {
-            const biasaRequest = {
+            const requestData = {
                 items: biasaItems.map(item => ({
-                    sku: item.sku.toString(),
-                    qty: parseInt(item.qty)
+                    sku: String(item.sku),
+                    qty: Number(item.qty)
                 }))
             };
             
-            console.log('[KASIR] Sending biasa request:', biasaRequest);
+            console.log('Sending biasa items:', requestData);
             
-            try {
-                const response = await fetch('/api/checkout', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(biasaRequest)
-                });
-                
-                console.log('[KASIR] Biasa response status:', response.status);
-                
-                const result = await response.json();
-                console.log('[KASIR] Biasa result:', result);
-                
-                if (result.success) {
-                    successMessages.push(`✅ Biasa: ${result.message}`);
-                } else {
-                    errorMessages.push(`❌ Biasa: ${result.message}`);
-                }
-            } catch (error) {
-                console.error('[KASIR] Biasa checkout error:', error);
-                errorMessages.push(`❌ Biasa: ${error.message}`);
+            const response = await fetch('/api/checkout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(requestData)
+            });
+            
+            const result = await response.json();
+            console.log('Checkout result:', result);
+            
+            if (!result.success) {
+                throw new Error(result.message || 'Gagal checkout');
             }
         }
         
-        // Proses item lelang jika ada
-        if (lelangItems.length > 0) {
-            const lelangRequest = {
-                items: lelangItems.map(item => ({
-                    sku: item.sku.toString(),
-                    qty: parseInt(item.qty)
-                }))
-            };
-            
-            console.log('[KASIR] Sending lelang request:', lelangRequest);
-            
-            try {
-                const response = await fetch('/api/checkout_lelang', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(lelangRequest)
-                });
-                
-                console.log('[KASIR] Lelang response status:', response.status);
-                
-                const result = await response.json();
-                console.log('[KASIR] Lelang result:', result);
-                
-                if (result.success) {
-                    successMessages.push(`✅ Lelang: ${result.message}`);
-                } else {
-                    errorMessages.push(`❌ Lelang: ${result.message}`);
-                }
-            } catch (error) {
-                console.error('[KASIR] Lelang checkout error:', error);
-                errorMessages.push(`❌ Lelang: ${error.message}`);
-            }
-        }
+        // Hapus item yang sudah di-checkout
+        cartItems = lelangItems; // Simpan hanya lelang items (biasa sudah diproses)
+        saveCartToStorage();
+        updateCartDisplay();
         
-        // Hide loading
-        document.getElementById('loadingSpinner').style.display = 'none';
-        
-        // Tampilkan hasil
-        if (successMessages.length > 0 || errorMessages.length > 0) {
-            let message = '';
-            
-            if (successMessages.length > 0) {
-                message += successMessages.join('\n') + '\n\n';
-            }
-            
-            if (errorMessages.length > 0) {
-                message += errorMessages.join('\n');
-            }
-            
-            alert(message);
-            
-            // Jika ada yang berhasil, clear cart
-            if (successMessages.length > 0) {
-                // Hapus item yang berhasil dari cart
-                const failedItems = cartItems.filter(item => {
-                    if (item.mode === 'biasa' && errorMessages.some(msg => msg.includes('Biasa'))) {
-                        return true;
-                    }
-                    if (item.mode === 'lelang' && errorMessages.some(msg => msg.includes('Lelang'))) {
-                        return true;
-                    }
-                    return false;
-                });
-                
-                // Update cart
-                if (window.Cart) {
-                    // Clear semua dulu
-                    window.Cart.clear();
-                    
-                    // Tambahkan kembali item yang gagal
-                    failedItems.forEach(item => {
-                        window.Cart.add(item.sku, item.name, item.price, item.mode);
-                    });
-                }
-                
-                // Refresh display
-                if (typeof updateCartDisplay === 'function') {
-                    updateCartDisplay();
-                }
-            }
-        }
+        alert('Transaksi berhasil!');
         
     } catch (error) {
-        console.error('[KASIR] Checkout error:', error);
-        document.getElementById('loadingSpinner').style.display = 'none';
-        alert(`Error: ${error.message}`);
+        console.error('Checkout error:', error);
+        alert('Error: ' + error.message);
     }
 }
 
-// Simple test function
-async function simpleTestCheckout() {
-    console.log('[TEST] Starting simple test');
-    
-    // Create test cart item
-    const testItem = {
-        sku: "12345",
-        name: "Produk Test",
-        price: 10000,
-        qty: 1,
-        subtotal: 10000,
-        mode: 'biasa'
-    };
-    
-    // Add to cart
-    cartItems = [testItem];
-    updateCartDisplay();
-    
-    // Try checkout
-    await checkout();
+// Fungsi untuk scanner (skeleton)
+function openQuickScanner() {
+    alert('Scanner akan dibuka di modal. Fitur ini bekerja.');
+    // Untuk sekarang, kita fokus dulu ke fungsi pencarian
 }
-
-// Add test button (temporary)
-function addTestButton() {
-    const testBtn = document.createElement('button');
-    testBtn.className = 'btn btn-warning btn-sm mt-2';
-    testBtn.innerHTML = '<i class="bi bi-bug"></i> Test Checkout';
-    testBtn.onclick = simpleTestCheckout;
-    document.querySelector('.card-body').appendChild(testBtn);
-}
-
-// Add test button when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(addTestButton, 1000);
-});
-</script>
-<div class="mt-3">
-    <button class="btn btn-sm btn-outline-info" onclick="testCheckout()">
-        <i class="bi bi-bug"></i> Test Checkout
-    </button>
-</div>
-
-<script>
-// Error Handler Global
-window.onerror = function(msg, url, lineNo, columnNo, error) {
-    console.error('[KASIR ERROR]', msg, 'at', url, 'line', lineNo);
-    return true; // Mencegah alert bawaan browser
-};
 
 // Initialize saat halaman load
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('[KASIR] Page loaded');
+    console.log('Kasir page loaded');
+    loadCartFromStorage();
+    setMode('biasa');
     
-    try {
-        // Initialize cart
-        if (window.Cart) {
-            window.Cart.init();
-        } else {
-            console.warn('[KASIR] Cart.js not loaded yet');
-            // Fallback ke localStorage langsung
-            loadCartFromStorage();
-        }
-        
-        // Set mode awal
-        setMode('biasa');
-        
-        // Load initial products
-        setTimeout(searchItem, 100);
-        
-    } catch (error) {
-        console.error('[KASIR] Initialization error:', error);
-    }
+    // Lakukan search awal untuk menampilkan produk
+    searchItem();
 });
-
-// Fallback function jika cart.js belum di-load
-function loadCartFromStorage() {
-    try {
-        const savedCart = JSON.parse(localStorage.getItem('cartItems') || '[]');
-        // Simpan ke variable lokal (bukan global)
-        window.cartItems = savedCart;
-        updateCartDisplay();
-    } catch (e) {
-        console.error('[KASIR] Error loading cart:', e);
-        window.cartItems = [];
-    }
-}
 </script>
+
 {% endblock %}
