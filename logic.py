@@ -21,34 +21,47 @@ except ImportError:
 # ============================================
 
 # Di logic.py atau Database class
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
 class Database:
     @staticmethod
     def get_conn():
         try:
+            # Debug: Lihat environment variable
+            print(f"[DEBUG] DATABASE_URL available: {'DATABASE_URL' in os.environ}")
+            
             # Untuk Vercel, gunakan environment variable
             db_url = os.environ.get('DATABASE_URL')
             
             if not db_url:
-                print("⚠️ DATABASE_URL not found in env, using fallback")
-                # Fallback untuk local development
-                db_url = "postgresql://neondb_owner:npg_ptNaxkIwe4D9@ep-little-hat-ah5adtxh-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require"
+                print("⚠️ DATABASE_URL not found in env, checking for POSTGRES_URL...")
+                db_url = os.environ.get('POSTGRES_URL')  # Alternative for Vercel
             
-            # Connect dengan timeout
+            if not db_url:
+                print("⚠️ No database URL found in environment")
+                return None
+            
+            print(f"[DEBUG] Using database URL: {db_url[:50]}...")  # Log first 50 chars
+            
+            # Connect ke PostgreSQL
             conn = psycopg2.connect(
                 db_url,
                 connect_timeout=10,
                 keepalives=1,
-                keepalives_idle=30,
-                keepalives_interval=10,
-                keepalives_count=5
+                keepalives_idle=30
             )
             
-            print("✅ Database connected successfully")
+            print("✅ Database connected successfully!")
             return conn
             
+        except psycopg2.Error as e:
+            print(f"❌ PostgreSQL Error: {e}")
+            print(f"Error details: {e.pgerror if hasattr(e, 'pgerror') else 'No details'}")
+            return None
         except Exception as e:
-            print(f"❌ Database connection failed: {e}")
-            # Log lebih detail untuk debugging
+            print(f"❌ General Database Error: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -57,23 +70,25 @@ class Inventory:
         self.db = db_conn
 
     def search_produk(self, query=''):
-        """Search produk biasa - FIXED COLUMN NAMES"""
+        """Search produk biasa - FIXED FOR POSTGRESQL"""
         if not self.db: 
+            print("[INVENTORY] No database connection")
             return []
         
         cursor = self.db.cursor(cursor_factory=RealDictCursor)
         try:
-            # ✅ FIX: Gunakan no_sku (bukan no_SKU), name_product, price, stok
+            # ✅ Gunakan kolom yang sesuai dengan database Neon/PostgreSQL Anda
             sql = """
             SELECT 
-                no_sku as no_SKU,           -- Alias untuk kompatibilitas
-                name_product as Name_product, 
-                price as Price, 
+                no_sku as "no_SKU",
+                name_product as "Name_product",
+                price as "Price",
                 expired_date,
-                COALESCE(stok, 0) as stok
+                COALESCE(stok, 0) as stok,
+                'biasa' as type
             FROM produk_biasa 
             WHERE name_product ILIKE %s 
-            OR CAST(no_sku AS VARCHAR) ILIKE %s
+            OR no_sku::TEXT ILIKE %s
             ORDER BY name_product
             LIMIT 50
             """
@@ -81,13 +96,33 @@ class Inventory:
             search_pattern = f"%{query}%" if query else "%"
             cursor.execute(sql, (search_pattern, search_pattern))
             
-            result = cursor.fetchall()
+            results = cursor.fetchall()
             
-            print(f"[DEBUG] search_produk query: '{query}' found {len(result)} results")
+            print(f"[DEBUG] search_produk found {len(results)} results")
             
-            return result
+            # Konversi ke format yang diharapkan frontend
+            formatted_results = []
+            for r in results:
+                item = {
+                    'no_SKU': r['no_SKU'],
+                    'Name_product': r['Name_product'],
+                    'Price': float(r['Price']) if r['Price'] else 0,
+                    'stok': int(r['stok']) if r['stok'] else 0,
+                    'type': 'biasa'
+                }
+                
+                if r['expired_date']:
+                    if isinstance(r['expired_date'], str):
+                        item['expired_date'] = r['expired_date']
+                    else:
+                        item['expired_date'] = r['expired_date'].isoformat() if hasattr(r['expired_date'], 'isoformat') else str(r['expired_date'])
+                
+                formatted_results.append(item)
+            
+            return formatted_results
+            
         except Exception as e:
-            print(f"[ERROR] search_produk: {e}")
+            print(f"[ERROR] search_produk failed: {str(e)}")
             import traceback
             traceback.print_exc()
             return []

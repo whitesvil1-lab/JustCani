@@ -10,10 +10,6 @@ import json
 import base64
 from werkzeug.utils import secure_filename
 from io import BytesIO
-import logging
-import cv2
-import numpy as np
-from pyzbar.pyzbar import decode
 import traceback
 # Di app.py, tambahkan setelah Flask app creation
 from flask_cors import CORS
@@ -21,10 +17,6 @@ from flask_cors import CORS
 
 # Atau lebih spesifik:
 # CORS(app, resources={r"/api/*": {"origins": ["https://your-vercel-app.vercel.app", "http://localhost:5000"]}})
-
-# Setup logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
 
 # ============================================
 # CHECK DEPENDENCIES
@@ -174,71 +166,15 @@ def get_time_ago(timestamp):
     else:
         return "Baru saja"
 
-def scan_barcode_with_pyzbar(image):
-    """
-    Scan barcode menggunakan pyzbar
-    Args:
-        image: numpy array image (BGR or GRAY)
-    Returns:
-        dict: {'success': bool, 'barcode': str, 'format': str, 'polygon': list}
-    """
-    try:
-        # Convert to grayscale if needed
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image
-        
-        # Decode barcodes
-        decoded_objects = decode(gray)
-        
-        if decoded_objects:
-            barcode_obj = decoded_objects[0]
-            barcode_data = barcode_obj.data.decode('utf-8')
-            barcode_type = barcode_obj.type
-            
-            # Format mapping untuk konsistensi
-            format_map = {
-                'CODE128': 'code_128',
-                'EAN13': 'ean_13',
-                'EAN8': 'ean_8',
-                'UPC-A': 'upc_a',
-                'UPC-E': 'upc_e',
-                'CODE39': 'code_39'
-            }
-            
-            return {
-                'success': True,
-                'codeResult': {
-                    'code': barcode_data,
-                    'format': format_map.get(barcode_type, barcode_type.lower()),
-                    'decoded': barcode_data
-                },
-                'bounds': {
-                    'x': barcode_obj.rect.left,
-                    'y': barcode_obj.rect.top,
-                    'width': barcode_obj.rect.width,
-                    'height': barcode_obj.rect.height
-                },
-                'cornerPoints': [
-                    {'x': point.x, 'y': point.y} 
-                    for point in barcode_obj.polygon
-                ]
-            }
-        else:
-            return {
-                'success': False,
-                'codeResult': None,
-                'message': 'No barcode detected'
-            }
-            
-    except Exception as e:
-        print(f"Error in barcode scanning: {e}")
-        return {
-            'success': False,
-            'codeResult': None,
-            'message': f'Scanning error: {str(e)}'
-        }
+def simple_barcode_scan(image_data):
+    """Simple barcode scanner tanpa opencv"""
+    # Untuk sekarang, return dummy data
+    # Nanti bisa diganti dengan library yang lebih ringan
+    return {
+        "success": False,
+        "message": "Barcode scanner disabled in production",
+        "barcode": "TEST123"  # Dummy untuk testing
+    }
 
 # ============================================
 # ROUTES - AUTHENTICATION & PROFILE
@@ -647,36 +583,111 @@ def admin_history():
 @app.route("/admin/add", methods=['POST'])
 def admin_add():
     if session.get('role') != 'admin':
-        return redirect(url_for('home'))
+        flash('Akses ditolak! Hanya admin.', 'danger')
+        return redirect(url_for('admin'))
     
-    sys = CashierSystem()
-    sku = request.form.get('sku')
-    name = request.form.get('name')
-    harga = request.form.get('harga')
-    expired_date = request.form.get('expired_date')
-    
-    if BARCODE_AVAILABLE and sku:
+    try:
+        # Ambil data dari form
+        sku = request.form.get('sku', '').strip()
+        name = request.form.get('name', '').strip()
+        harga = request.form.get('harga', '0').strip()
+        expired_date = request.form.get('expired_date', '').strip()
+        
+        if not sku or not name or not harga:
+            flash('SKU, Nama, dan Harga harus diisi!', 'danger')
+            return redirect(url_for('admin'))
+        
+        # Konversi harga ke integer
         try:
-            code128 = barcode.get_barcode_class('code128')
-            barcode_instance = code128(str(sku), writer=ImageWriter())
-            
-            buffer = BytesIO()
-            barcode_instance.write(buffer)
-            buffer.seek(0)
-            
-            barcode_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-            barcode_data = f"data:image/png;base64,{barcode_base64}"
-            
-            sys.inventory.save_barcode_to_db(sku, barcode_data)
-            print(f"✅ Barcode auto-generated for SKU: {sku}")
-            
-        except Exception as e:
-            print(f"⚠️ Barcode generation failed: {e}")
+            harga_int = int(float(harga))
+        except:
+            flash('Harga harus angka!', 'danger')
+            return redirect(url_for('admin'))
+        
+        # Insert ke database
+        from logic import Database
+        conn = Database.get_conn()
+        if not conn:
+            flash('Database tidak terhubung!', 'danger')
+            return redirect(url_for('admin'))
+        
+        cursor = conn.cursor()
+        
+        # Cek apakah SKU sudah ada
+        cursor.execute("SELECT no_sku FROM produk_biasa WHERE no_sku = %s", (sku,))
+        if cursor.fetchone():
+            flash(f'SKU {sku} sudah ada!', 'danger')
+            conn.close()
+            return redirect(url_for('admin'))
+        
+        # Insert produk baru
+        sql = """
+        INSERT INTO produk_biasa (no_sku, name_product, price, expired_date, stok) 
+        VALUES (%s, %s, %s, %s, 0)
+        """
+        
+        cursor.execute(sql, (sku, name, harga_int, expired_date if expired_date else None))
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        
+        flash(f'Produk {name} berhasil ditambahkan!', 'success')
+        return redirect(url_for('admin'))
+        
+    except Exception as e:
+        print(f"[ADMIN ADD ERROR] {e}")
+        flash(f'Error: {str(e)}', 'danger')
+        return redirect(url_for('admin'))
     
-    sys.inventory.add_produk_baru(sku, name, harga, expired_date)
-    
-    flash('Produk berhasil ditambahkan!', 'success')
-    return redirect(url_for('admin'))
+@app.route("/api/debug/env")
+def debug_env():
+    """Debug environment variables (tanpa expose secret)"""
+    return jsonify({
+        "platform": "vercel" if os.environ.get('VERCEL') else "localhost",
+        "database_url_set": bool(os.environ.get('DATABASE_URL')),
+        "database_url_length": len(os.environ.get('DATABASE_URL', '')) if os.environ.get('DATABASE_URL') else 0,
+        "python_version": sys.version,
+        "flask_env": os.environ.get('FLASK_ENV', 'Not set'),
+        "timestamp": datetime.now().isoformat()
+    })
+
+@app.route("/api/debug/test_connection")
+def debug_test_connection():
+    """Test koneksi database langsung"""
+    try:
+        from logic import Database
+        
+        conn = Database.get_conn()
+        if not conn:
+            return jsonify({"success": False, "error": "No connection"})
+        
+        cursor = conn.cursor()
+        
+        # Test query sederhana
+        cursor.execute("SELECT 1 as test")
+        result = cursor.fetchone()
+        
+        # Cek tabel produk_biasa
+        cursor.execute("SELECT COUNT(*) FROM produk_biasa")
+        count_biasa = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM produk_lelang")
+        count_lelang = cursor.fetchone()[0]
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "test_query": result[0] if result else None,
+            "produk_biasa_count": count_biasa,
+            "produk_lelang_count": count_lelang,
+            "message": "Database connection OK"
+        })
+        
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 @app.route("/admin/restock", methods=['POST'])
 def admin_restock():
@@ -716,66 +727,32 @@ def admin_move_lelang():
 
 @app.route("/api/search")
 def api_search():
-    """API untuk search produk biasa - DIRECT QUERY VERSION"""
+    """API untuk search produk biasa - VERIFIED VERSION"""
     try:
         query = request.args.get('q', '')
-        print(f"[DEBUG] Direct search produk biasa: '{query}'")
+        print(f"[API SEARCH] Query: '{query}'")
         
-        connection = Database.get_conn()
-        if not connection:
-            return jsonify({"results": []}), 200
+        # Gunakan Inventory class langsung
+        from logic import Database, Inventory
         
-        cursor = connection.cursor(cursor_factory=RealDictCursor)
+        conn = Database.get_conn()
+        if not conn:
+            print("[API SEARCH] No database connection")
+            return jsonify({"error": "Database connection failed", "results": []}), 500
         
-        # Direct query tanpa Inventory class
-        sql = """
-        SELECT 
-            no_sku as "no_SKU",
-            name_product as "Name_product",
-            price as "Price",
-            expired_date,
-            COALESCE(stok, 0) as stok
-        FROM produk_biasa 
-        WHERE name_product ILIKE %s OR CAST(no_sku AS VARCHAR) ILIKE %s
-        ORDER BY name_product
-        LIMIT 50
-        """
+        inventory = Inventory(conn)
+        results = inventory.search_produk(query)
         
-        search_pattern = f"%{query}%" if query else "%"
-        cursor.execute(sql, (search_pattern, search_pattern))
-        results = cursor.fetchall()
+        conn.close()
         
-        print(f"[DEBUG] Direct search found {len(results)} results")
-        
-        # Format results
-        formatted = []
-        for r in results:
-            item = {
-                'no_SKU': r['no_SKU'],
-                'Name_product': r['Name_product'],
-                'Price': float(r['Price']) if r['Price'] else 0,
-                'stok': int(r['stok']) if r['stok'] else 0
-            }
-            
-            if r['expired_date']:
-                if isinstance(r['expired_date'], datetime):
-                    item['expired_date'] = r['expired_date'].isoformat()
-                else:
-                    item['expired_date'] = str(r['expired_date'])
-            
-            formatted.append(item)
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify(formatted)
+        print(f"[API SEARCH] Returning {len(results)} results")
+        return jsonify(results)
         
     except Exception as e:
-        print(f"[ERROR] Direct api_search failed: {str(e)}")
+        print(f"[API SEARCH ERROR] {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e), "results": []}), 500
-
 #debug lelang
 @app.route("/api/debug/lelang_products")
 def debug_lelang_products():
@@ -849,17 +826,14 @@ def debug_lelang_products():
 
 @app.route("/api/search_lelang")
 def api_search_lelang():
-    """API untuk search produk lelang - FIXED VERSION"""
-    print(f"[API] Search lelang called: q={request.args.get('q', '')}")
+    """API untuk search produk lelang - SIMPLE POSTGRESQL VERSION"""
+    print(f"[API LE] Search lelang called")
     
     try:
-        # Direct query tanpa melalui Inventory class
         from logic import Database
-        from datetime import datetime
         
         conn = Database.get_conn()
         if not conn:
-            print("[API] No database connection")
             return jsonify([]), 200
         
         cursor = conn.cursor()
@@ -867,71 +841,44 @@ def api_search_lelang():
         query = request.args.get('q', '')
         search_pattern = f"%{query}%" if query else "%"
         
-        print(f"[API] Searching with pattern: {search_pattern}")
-        
-        # ✅ SIMPLE QUERY dengan semua kolom
+        # Query sederhana langsung ke PostgreSQL
         sql = """
         SELECT 
             no_sku,
             name_product,
             price,
-            expired_date,
-            barcode_image
+            expired_date
         FROM produk_lelang 
-        WHERE name_product ILIKE %s OR CAST(no_sku AS VARCHAR) ILIKE %s
+        WHERE name_product ILIKE %s 
+        OR no_sku::TEXT ILIKE %s
         ORDER BY name_product
         LIMIT 50
         """
         
         cursor.execute(sql, (search_pattern, search_pattern))
-        results = cursor.fetchall()
-        
-        print(f"[API] Found {len(results)} lelang products")
+        rows = cursor.fetchall()
         
         # Format untuk frontend
-        formatted = []
-        for row in results:
-            # Debug setiap row
-            print(f"[API] Row data: {row}")
-            
-            # Convert row tuple to dictionary
-            item = {
+        results = []
+        for row in rows:
+            results.append({
                 'no_SKU': row[0],          # no_sku
                 'Name_product': row[1],     # name_product
-                'Price': row[2],            # price
+                'Price': float(row[2]) if row[2] else 0,  # price
                 'type': 'lelang'
-            }
-            
-            # Format expired_date jika ada
-            if row[3]:
-                try:
-                    if isinstance(row[3], datetime):
-                        item['expired_date'] = row[3].isoformat()
-                    else:
-                        # Jika string, parse dulu
-                        item['expired_date'] = str(row[3])
-                except Exception as e:
-                    print(f"[API] Date format error: {e}")
-                    item['expired_date'] = str(row[3])
-            
-            # Tambah barcode jika ada
-            if row[4]:
-                item['barcode_image'] = row[4]
-            
-            formatted.append(item)
-            print(f"[API] Formatted item: {item}")
+            })
         
         cursor.close()
         conn.close()
         
-        print(f"[API] Returning {len(formatted)} items")
-        return jsonify(formatted)
+        print(f"[API LE] Found {len(results)} lelang products")
+        return jsonify(results)
         
     except Exception as e:
-        print(f"[ERROR] api_search_lelang: {str(e)}")
+        print(f"[API LE ERROR] {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e), "results": []}), 500
+        return jsonify([]), 200  # Return empty array instead of error
     
 
 @app.route("/api/checkout", methods=['POST'])
@@ -1248,106 +1195,62 @@ def api_stats():
 
 @app.route("/api/scan_barcode", methods=['POST'])
 def scan_barcode():
-    """API untuk scan barcode menggunakan pyzbar"""
+    """API untuk scan barcode - SIMPLIFIED VERSION"""
     if not session.get('user_id'):
         return jsonify({"success": False, "message": "Silakan login terlebih dahulu"})
     
     try:
-        if 'image' not in request.files:
-            data = request.json
-            if not data or 'image' not in data:
-                return jsonify({"success": False, "message": "Tidak ada gambar"})
-            
-            # Decode base64 image
-            image_data = data['image'].split(',')[1] if ',' in data['image'] else data['image']
-            nparr = np.frombuffer(base64.b64decode(image_data), np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
-            # Scan barcode with pyzbar
-            result = scan_barcode_with_pyzbar(img)
-            
-            if result['success']:
-                barcode_code = result['codeResult']['code']
-                print(f"[DEBUG] Barcode yang discan: '{barcode_code}'")
-                print(f"[DEBUG] Tipe data barcode: {type(barcode_code)}")
-                
-                # Cari produk di database
-                sys = CashierSystem()
-                cursor = sys.db.cursor(cursor_factory=RealDictCursor)
-                
-                # === PERUBAHAN: Coba convert ke integer ===
-                try:
-                    # Coba convert barcode ke integer
-                    sku_int = int(barcode_code)
-                    
-                    # Cari di produk biasa dengan integer
-                    cursor.execute("""
-                        SELECT no_SKU as sku, Name_product as name, Price as price, stok, 'biasa' as type
-                        FROM produk_biasa 
-                        WHERE no_SKU = %s
-                    """, (sku_int,))
-                    product = cursor.fetchone()
-                    
-                    if not product:
-                        # Cari di produk lelang
-                        cursor.execute("""
-                            SELECT no_SKU as sku, Name_product as name, Price as price, 'lelang' as type
-                            FROM produk_lelang 
-                            WHERE no_SKU = %s
-                        """, (sku_int,))
-                        product = cursor.fetchone()
-                        
-                except ValueError:
-                    # Jika barcode bukan angka, cari sebagai string
-                    cursor.execute("""
-                        SELECT no_SKU as sku, Name_product as name, Price as price, stok, 'biasa' as type
-                        FROM produk_biasa 
-                        WHERE CAST(no_SKU AS TEXT) = %s
-                    """, (barcode_code,))
-                    product = cursor.fetchone()
-                    
-                    if not product:
-                        cursor.execute("""
-                            SELECT no_SKU as sku, Name_product as name, Price as price, 'lelang' as type
-                            FROM produk_lelang 
-                            WHERE CAST(no_SKU AS TEXT) = %s
-                        """, (barcode_code,))
-                        product = cursor.fetchone()
-                
-                cursor.close()
-                
-                if product:
-                    return jsonify({
-                        "success": True,
-                        "barcode": barcode_code,
-                        "barcode_format": result['codeResult']['format'],
-                        "product": product,
-                        "scan_result": result
-                    })
-                else:
-                    return jsonify({
-                        "success": False,
-                        "message": f"Produk dengan SKU {barcode_code} tidak ditemukan",
-                        "barcode": barcode_code,
-                        "barcode_format": result['codeResult']['format']
-                    })
-            
+        # Simple implementation tanpa opencv
+        data = request.json
+        if data and 'barcode' in data:
+            # Jika barcode dikirim manual
+            barcode_code = data['barcode']
+        else:
+            # Fallback ke dummy
+            barcode_code = "TEST123"
+        
+        # Cari produk
+        sys = CashierSystem()
+        cursor = sys.db.cursor(cursor_factory=RealDictCursor)
+        
+        # Cari di produk biasa
+        cursor.execute("""
+            SELECT no_sku as sku, name_product as name, price as price, stok, 'biasa' as type
+            FROM produk_biasa 
+            WHERE CAST(no_sku AS TEXT) = %s
+        """, (barcode_code,))
+        product = cursor.fetchone()
+        
+        if not product:
+            # Cari di produk lelang
+            cursor.execute("""
+                SELECT no_sku as sku, name_product as name, price as price, 'lelang' as type
+                FROM produk_lelang 
+                WHERE CAST(no_sku AS TEXT) = %s
+            """, (barcode_code,))
+            product = cursor.fetchone()
+        
+        cursor.close()
+        
+        if product:
+            return jsonify({
+                "success": True,
+                "barcode": barcode_code,
+                "product": product,
+                "note": "Manual input mode (opencv disabled)"
+            })
+        else:
             return jsonify({
                 "success": False,
-                "message": result.get('message', 'Barcode tidak terdeteksi'),
-                "scan_result": result
+                "message": f"Produk dengan SKU {barcode_code} tidak ditemukan",
+                "barcode": barcode_code
             })
             
     except Exception as e:
-        print(f"Error scanning barcode: {e}")
-        import traceback
-        traceback.print_exc()
         return jsonify({
             "success": False,
             "message": f"Error: {str(e)}"
         })
-    
-    return jsonify({"success": False, "message": "Gagal memproses"})
 
 @app.route("/api/products/for_barcode")
 def api_products_for_barcode():

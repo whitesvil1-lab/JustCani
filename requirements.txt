@@ -3,8 +3,8 @@ Flask==3.1.2
 flask-cors==6.0.2
 Flask-WTF==1.2.2
 gunicorn==23.0.0
-numpy==2.2.6
-opencv-python==4.12.0.88
 psycopg2-binary==2.9.11
 python-barcode==0.16.1
-pyzbar==0.1.9
+WTForms==3.2.1
+Pillow==11.0.0  
+python-dotenv==1.0.0
