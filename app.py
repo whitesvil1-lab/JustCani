@@ -1540,84 +1540,38 @@ def api_barcode_status():
 
 @app.route("/api/process_barcode", methods=['POST'])
 def api_process_barcode():
-    """API untuk process barcode dari gambar - LIGHTWEIGHT VERSION"""
+    """API untuk process barcode - SIMPLE VERSION (NO PYZBAR)"""
     if not session.get('user_id'):
         return jsonify({"success": False, "message": "Silakan login terlebih dahulu"})
     
     try:
-        if 'barcode_image' not in request.files:
-            return jsonify({"success": False, "message": "Tidak ada gambar"})
+        # Karena scanner sekarang client-side, endpoint ini tidak dipakai
+        # Tapi tetap ada untuk compatibility
         
-        file = request.files['barcode_image']
-        
-        if file.filename == '':
-            return jsonify({"success": False, "message": "File tidak dipilih"})
-        
-        # Simpan file sementara
-        import tempfile
-        import os
-        
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
-            file.save(tmp.name)
-            tmp_path = tmp.name
-        
-        try:
-            # Gunakan pyzbar untuk decode barcode (lebih ringan dari opencv)
-            from pyzbar.pyzbar import decode
-            from PIL import Image
-            
-            # Buka gambar dengan PIL
-            img = Image.open(tmp_path)
-            
-            # Decode barcode
-            decoded_objects = decode(img)
-            
-            if decoded_objects:
-                # Ambil barcode pertama yang ditemukan
-                barcode_data = decoded_objects[0].data.decode('utf-8')
-                barcode_type = decoded_objects[0].type
-                
-                print(f"[BARCODE] Found: {barcode_data} (Type: {barcode_type})")
-                
-                return jsonify({
-                    "success": True,
-                    "barcode": barcode_data,
-                    "type": barcode_type,
-                    "message": "Barcode berhasil dipindai"
-                })
-            else:
-                return jsonify({
-                    "success": False,
-                    "message": "Tidak ada barcode ditemukan dalam gambar"
-                })
-                
-        finally:
-            # Hapus file temporary
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-        
-    except ImportError as e:
-        print(f"[BARCODE] Library not available: {e}")
-        # Fallback ke base64 processing jika pyzbar tidak tersedia
-        try:
-            # Simple fallback: coba parse dari data URL jika ada
-            if request.form.get('image_data'):
-                # Handle base64 image data
-                pass
+        # Jika ada file, abaikan (kita tidak process gambar di server)
+        if 'barcode_image' in request.files:
             return jsonify({
                 "success": False,
-                "message": "Barcode scanner tidak tersedia di server",
-                "fallback": "Gunakan manual input"
+                "message": "Scanner dipindah ke client-side. Gunakan scanner HTML5.",
+                "fallback": "manual"
             })
-        except:
+        
+        # Jika ada barcode manual
+        if request.json and 'barcode' in request.json:
+            barcode = request.json['barcode']
             return jsonify({
-                "success": False, 
-                "message": "Scanner tidak tersedia"
+                "success": True,
+                "barcode": barcode,
+                "message": "Barcode diterima (manual mode)",
+                "note": "Gunakan scanner HTML5 untuk scan otomatis"
             })
+        
+        return jsonify({
+            "success": False,
+            "message": "Gunakan scanner HTML5 di browser"
+        })
+        
     except Exception as e:
-        print(f"[BARCODE ERROR] {str(e)}")
-        import traceback
-        traceback.print_exc()
         return jsonify({"success": False, "message": f"Error: {str(e)}"})
 
 @app.route("/api/find_product_by_barcode", methods=['POST'])
@@ -1691,57 +1645,14 @@ def api_find_product_by_barcode():
 
 @app.route("/api/test_barcode", methods=['GET'])
 def api_test_barcode():
-    """Test endpoint untuk cek library barcode"""
-    try:
-        # Cek apakah pyzbar tersedia
-        from pyzbar.pyzbar import decode
-        from PIL import Image
-        
-        # Buat barcode test image
-        if BARCODE_AVAILABLE:
-            import barcode
-            from barcode.writer import ImageWriter
-            
-            code128 = barcode.get_barcode_class('code128')
-            barcode_instance = code128("TEST123", writer=ImageWriter())
-            
-            buffer = BytesIO()
-            barcode_instance.write(buffer)
-            buffer.seek(0)
-            
-            # Test decode
-            img = Image.open(buffer)
-            decoded = decode(img)
-            
-            return jsonify({
-                "success": True,
-                "pyzbar_available": True,
-                "barcode_available": True,
-                "test_decode": len(decoded) > 0,
-                "decoded_data": decoded[0].data.decode('utf-8') if decoded else None
-            })
-        else:
-            return jsonify({
-                "success": True,
-                "pyzbar_available": True,
-                "barcode_available": False,
-                "message": "Python-barcode not installed"
-            })
-            
-    except ImportError as e:
-        return jsonify({
-            "success": False,
-            "pyzbar_available": False,
-            "error": str(e),
-            "message": "Install: pip install pyzbar pillow"
-        })
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "message": "Barcode test failed"
-        })
-
+    """Test endpoint untuk cek barcode - SIMPLE VERSION"""
+    return jsonify({
+        "success": True,
+        "scanner_type": "client-side",
+        "html5_scanner": "available",
+        "server_processing": "disabled",
+        "message": "Scanner menggunakan HTML5 QR Code (client-side)"
+    })
 
 @app.route("/admin/history/monthly")
 def admin_monthly_report():

@@ -3,83 +3,56 @@
 <div class="container mt-4">
     <div class="row">
         <div class="col-md-8">
-            <!-- Kamera Scanner -->
             <div class="card mb-4">
                 <div class="card-header bg-primary text-white">
                     <h5 class="mb-0">
-                        <i class="bi bi-upc-scan me-2"></i>Barcode Scanner
+                        <i class="bi bi-upc-scan me-2"></i>Barcode Scanner (Client-side)
                     </h5>
                 </div>
                 <div class="card-body">
-                    <!-- Pilihan Kamera -->
+                    <!-- Pilihan Scanner -->
                     <div class="mb-3">
-                        <label class="form-label">Pilih Kamera:</label>
-                        <select id="cameraSelect" class="form-select mb-3">
-                            <option value="">Loading kamera...</option>
+                        <label class="form-label">Pilih Metode Scan:</label>
+                        <select id="scannerType" class="form-select mb-3" onchange="changeScannerType()">
+                            <option value="html5">HTML5 Scanner (Rekomendasi)</option>
+                            <option value="manual">Manual Input</option>
                         </select>
                     </div>
                     
-                    <!-- Area Kamera -->
-                    <div class="text-center">
-                        <div class="border rounded overflow-hidden position-relative" id="scannerContainer">
-                            <video id="scannerVideo" class="w-100" playsinline autoplay muted></video>
-                            <div class="scanner-overlay"></div>
-                            <div class="scanner-guide"></div>
-                        </div>
+                    <!-- Area Scanner HTML5 -->
+                    <div id="html5ScannerArea">
+                        <div id="reader" class="border rounded" style="width: 100%; height: 400px;"></div>
                         
-                        <!-- Kontrol Kamera -->
                         <div class="mt-3">
-                            <button id="startButton" class="btn btn-success" onclick="startScanner()">
+                            <button id="startHtml5Btn" class="btn btn-success" onclick="startHtml5Scanner()">
                                 <i class="bi bi-play-circle"></i> Mulai Scan
                             </button>
-                            <button id="stopButton" class="btn btn-danger" onclick="stopScanner()" disabled>
+                            <button id="stopHtml5Btn" class="btn btn-danger" onclick="stopHtml5Scanner()" disabled>
                                 <i class="bi bi-stop-circle"></i> Stop Scan
                             </button>
-                            <button id="captureButton" class="btn btn-primary" onclick="captureFrame()" disabled>
-                                <i class="bi bi-camera"></i> Capture
+                            <button class="btn btn-warning" onclick="switchCamera()">
+                                <i class="bi bi-camera-video"></i> Ganti Kamera
                             </button>
                         </div>
+                    </div>
+                    
+                    <!-- Area Manual Input -->
+                    <div id="manualInputArea" style="display: none;">
+                        <div class="mb-3">
+                            <label class="form-label">Masukkan Kode Barcode:</label>
+                            <input type="text" id="manualBarcode" class="form-control" 
+                                   placeholder="Contoh: 1, 5, 1001..."
+                                   onkeypress="if(event.key === 'Enter') manualScan()">
+                        </div>
+                        <button class="btn btn-primary w-100" onclick="manualScan()">
+                            <i class="bi bi-search"></i> Cari Produk
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
         
         <div class="col-md-4">
-            <!-- Manual Input (Fallback) -->
-            <div class="card mb-4">
-                <div class="card-header bg-secondary text-white">
-                    <h5 class="mb-0">
-                        <i class="bi bi-keyboard me-2"></i>Manual Input
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <label class="form-label">Masukkan Kode Barcode:</label>
-                        <input type="text" id="manualBarcode" class="form-control" 
-                               placeholder="Ketik atau scan barcode..."
-                               onkeypress="if(event.key === 'Enter') manualScan()">
-                    </div>
-                    <button class="btn btn-primary w-100" onclick="manualScan()">
-                        <i class="bi bi-search"></i> Cari Produk
-                    </button>
-                    
-                    <hr>
-                    
-                    <!-- Mode Scanner -->
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" id="autoModeSwitch" checked>
-                        <label class="form-check-label" for="autoModeSwitch">
-                            Auto-detect barcode
-                        </label>
-                    </div>
-                    
-                    <div class="alert alert-info small">
-                        <i class="bi bi-info-circle"></i>
-                        Letakkan barcode di dalam kotak scanner. Sistem akan otomatis mendeteksi.
-                    </div>
-                </div>
-            </div>
-            
             <!-- Hasil Scan -->
             <div class="card">
                 <div class="card-header bg-success text-white">
@@ -91,12 +64,24 @@
                     <div id="scanResult">
                         <div class="text-center text-muted py-4">
                             <i class="bi bi-upc-scan fs-1 d-block mb-2"></i>
-                            Belum ada hasil scan
+                            Silakan scan barcode atau ketik manual
                         </div>
                     </div>
                     
-                    <div class="mt-3" id="productInfo" style="display: none;">
-                        <!-- Info produk akan muncul di sini -->
+                    <div class="mt-3" id="productInfo" style="display: none;"></div>
+                </div>
+            </div>
+            
+            <!-- Recent Scans -->
+            <div class="card mt-3">
+                <div class="card-header bg-info text-white">
+                    <h6 class="mb-0">
+                        <i class="bi bi-clock-history me-2"></i>Scan Terakhir
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div id="recentScans" class="small">
+                        <!-- Will be populated -->
                     </div>
                 </div>
             </div>
@@ -104,224 +89,166 @@
     </div>
 </div>
 
-<!-- Loading Spinner -->
+<!-- Loading -->
 <div id="loadingSpinner" class="position-fixed top-50 start-50 translate-middle" style="display: none; z-index: 9999;">
     <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;">
         <span class="visually-hidden">Loading...</span>
     </div>
 </div>
 
+<!-- Load HTML5 QR Code Scanner Library -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
 <script>
 // ============================================
-// BARCODE SCANNER FUNCTIONS
+// CLIENT-SIDE BARCODE SCANNER (NO SERVER DEPENDENCY)
 // ============================================
 
-let videoStream = null;
-let scanInterval = null;
+let html5QrCode = null;
 let currentCameraId = null;
 
-// Daftar kamera yang tersedia
-async function loadCameras() {
-    try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-        
-        const select = document.getElementById('cameraSelect');
-        select.innerHTML = '<option value="">Pilih Kamera...</option>';
-        
-        videoDevices.forEach((device, index) => {
-            const option = document.createElement('option');
-            option.value = device.deviceId;
-            option.text = device.label || `Kamera ${index + 1}`;
-            select.appendChild(option);
-        });
-        
-        if (videoDevices.length > 0) {
-            currentCameraId = videoDevices[0].deviceId;
-            select.value = currentCameraId;
-        }
-        
-        select.onchange = function() {
-            currentCameraId = this.value;
-            if (videoStream) {
-                stopScanner();
-                setTimeout(startScanner, 500);
-            }
-        };
-        
-    } catch (error) {
-        console.error('Error loading cameras:', error);
-        alert('Tidak dapat mengakses kamera. Pastikan izin kamera diizinkan.');
+// Ganti tipe scanner
+function changeScannerType() {
+    const type = document.getElementById('scannerType').value;
+    
+    if (type === 'html5') {
+        document.getElementById('html5ScannerArea').style.display = 'block';
+        document.getElementById('manualInputArea').style.display = 'none';
+        stopHtml5Scanner(); // Stop dulu
+    } else {
+        document.getElementById('html5ScannerArea').style.display = 'none';
+        document.getElementById('manualInputArea').style.display = 'block';
+        stopHtml5Scanner(); // Stop scanner
     }
 }
 
-// Mulai scanner
-async function startScanner() {
+// Mulai HTML5 Scanner
+async function startHtml5Scanner() {
     try {
-        // Show loading
-        document.getElementById('loadingSpinner').style.display = 'block';
+        // Dapatkan list kamera
+        const cameras = await Html5Qrcode.getCameras();
         
-        const constraints = {
-            video: {
-                deviceId: currentCameraId ? { exact: currentCameraId } : undefined,
-                facingMode: 'environment', // Prioritize back camera
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            },
-            audio: false
+        if (cameras.length === 0) {
+            alert('Tidak ada kamera ditemukan!');
+            return;
+        }
+        
+        // Pilih kamera belakang jika ada
+        let selectedCamera = cameras[0];
+        const backCamera = cameras.find(cam => 
+            cam.label.toLowerCase().includes('back') || 
+            cam.label.toLowerCase().includes('rear')
+        );
+        
+        if (backCamera) {
+            selectedCamera = backCamera;
+        }
+        
+        currentCameraId = selectedCamera.id;
+        
+        // Stop scanner sebelumnya jika ada
+        if (html5QrCode && html5QrCode.isScanning) {
+            await html5QrCode.stop();
+        }
+        
+        // Buat instance baru
+        html5QrCode = new Html5Qrcode("reader");
+        
+        const config = {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            rememberLastUsedCamera: true,
+            supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
         };
         
-        videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+        // Mulai scanning
+        await html5QrCode.start(
+            currentCameraId,
+            config,
+            onScanSuccess,
+            onScanError
+        );
         
-        const video = document.getElementById('scannerVideo');
-        video.srcObject = videoStream;
+        // Update button state
+        document.getElementById('startHtml5Btn').disabled = true;
+        document.getElementById('stopHtml5Btn').disabled = false;
         
-        // Tunggu video siap
-        video.onloadedmetadata = () => {
-            document.getElementById('loadingSpinner').style.display = 'none';
-            document.getElementById('startButton').disabled = true;
-            document.getElementById('stopButton').disabled = false;
-            document.getElementById('captureButton').disabled = false;
-            
-            // Mulai auto-scan jika mode aktif
-            if (document.getElementById('autoModeSwitch').checked) {
-                startAutoScan();
-            }
-        };
+        console.log('✅ HTML5 Scanner started');
         
     } catch (error) {
         console.error('Error starting scanner:', error);
-        document.getElementById('loadingSpinner').style.display = 'none';
+        alert('Gagal memulai scanner: ' + error.message);
         
-        if (error.name === 'NotAllowedError') {
-            alert('Izin kamera ditolak. Silakan izinkan akses kamera di browser.');
-        } else if (error.name === 'NotFoundError') {
-            alert('Kamera tidak ditemukan.');
-        } else {
-            alert('Gagal mengakses kamera: ' + error.message);
-        }
+        // Fallback ke manual input
+        document.getElementById('scannerType').value = 'manual';
+        changeScannerType();
     }
 }
 
-// Stop scanner
-function stopScanner() {
-    if (scanInterval) {
-        clearInterval(scanInterval);
-        scanInterval = null;
-    }
-    
-    if (videoStream) {
-        videoStream.getTracks().forEach(track => track.stop());
-        videoStream = null;
-    }
-    
-    const video = document.getElementById('scannerVideo');
-    video.srcObject = null;
-    
-    document.getElementById('startButton').disabled = false;
-    document.getElementById('stopButton').disabled = true;
-    document.getElementById('captureButton').disabled = true;
-}
-
-// Ambil frame dari video
-function captureFrame() {
-    if (!videoStream) return;
-    
-    const video = document.getElementById('scannerVideo');
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    // Konversi ke blob dan kirim ke server
-    canvas.toBlob(blob => {
-        processBarcodeImage(blob);
-    }, 'image/jpeg', 0.8);
-}
-
-// Mulai auto-scan
-function startAutoScan() {
-    if (scanInterval) clearInterval(scanInterval);
-    
-    scanInterval = setInterval(() => {
-        if (!videoStream) return;
-        
-        const video = document.getElementById('scannerVideo');
-        if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-        
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        // Kirim untuk processing (dengan rate limit)
-        canvas.toBlob(blob => {
-            processBarcodeImage(blob);
-        }, 'image/jpeg', 0.8);
-        
-    }, 1000); // Scan setiap 1 detik
-}
-
-// Kirim gambar ke server untuk decode barcode
-async function processBarcodeImage(imageBlob) {
+// Stop HTML5 Scanner
+async function stopHtml5Scanner() {
     try {
-        const formData = new FormData();
-        formData.append('barcode_image', imageBlob, 'scan.jpg');
-        
-        const response = await fetch('/api/process_barcode', {
-            method: 'POST',
-            body: formData
-        });
-        
-        const result = await response.json();
-        
-        if (result.success && result.barcode) {
-            // Stop auto-scan jika berhasil
-            if (scanInterval) {
-                clearInterval(scanInterval);
-                scanInterval = null;
-            }
-            
-            // Cari produk berdasarkan barcode
-            findProductByBarcode(result.barcode);
+        if (html5QrCode && html5QrCode.isScanning) {
+            await html5QrCode.stop();
         }
+        
+        document.getElementById('startHtml5Btn').disabled = false;
+        document.getElementById('stopHtml5Btn').disabled = true;
+        
+        console.log('🛑 Scanner stopped');
         
     } catch (error) {
-        console.error('Error processing barcode:', error);
+        console.error('Error stopping scanner:', error);
     }
 }
 
-// Cari produk berdasarkan barcode
-async function findProductByBarcode(barcode) {
+// Ganti kamera
+async function switchCamera() {
     try {
-        showLoading('Mencari produk...');
+        const cameras = await Html5Qrcode.getCameras();
         
-        const response = await fetch('/api/find_product_by_barcode', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ barcode: barcode })
-        });
-        
-        const result = await response.json();
-        hideLoading();
-        
-        if (result.success) {
-            displayProductResult(result.product);
-        } else {
-            showResultError('Produk tidak ditemukan untuk barcode: ' + barcode);
+        if (cameras.length < 2) {
+            alert('Hanya ada 1 kamera tersedia');
+            return;
         }
         
+        // Cari kamera lain
+        const currentIndex = cameras.findIndex(cam => cam.id === currentCameraId);
+        const nextIndex = (currentIndex + 1) % cameras.length;
+        currentCameraId = cameras[nextIndex].id;
+        
+        // Restart dengan kamera baru
+        await stopHtml5Scanner();
+        setTimeout(startHtml5Scanner, 500);
+        
     } catch (error) {
-        console.error('Error finding product:', error);
-        hideLoading();
-        showResultError('Error: ' + error.message);
+        console.error('Error switching camera:', error);
     }
+}
+
+// Callback saat scan berhasil
+function onScanSuccess(decodedText, decodedResult) {
+    console.log(`Scan result: ${decodedText}`);
+    
+    // Stop scanner sementara
+    if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.pause();
+    }
+    
+    // Cari produk
+    findProductByBarcode(decodedText);
+    
+    // Resume scanning setelah 2 detik
+    setTimeout(() => {
+        if (html5QrCode) {
+            html5QrCode.resume();
+        }
+    }, 2000);
+}
+
+// Callback saat scan error (biasanya karena tidak ada barcode)
+function onScanError(error) {
+    // Biarkan saja, scanner akan terus mencoba
 }
 
 // Manual scan input
@@ -336,10 +263,63 @@ function manualScan() {
     document.getElementById('manualBarcode').value = '';
 }
 
+// Cari produk berdasarkan barcode
+async function findProductByBarcode(barcode) {
+    try {
+        showLoading('Mencari produk...');
+        
+        // Gunakan endpoint yang sudah ada
+        const response = await fetch('/api/find_product_by_barcode', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ barcode: barcode })
+        });
+        
+        const result = await response.json();
+        hideLoading();
+        
+        if (result.success) {
+            displayProductResult(result.product);
+            saveRecentScan(barcode, result.product.Name_product);
+        } else {
+            // Coba endpoint alternatif
+            await tryAlternativeSearch(barcode);
+        }
+        
+    } catch (error) {
+        console.error('Error finding product:', error);
+        hideLoading();
+        showResultError('Error: ' + error.message);
+    }
+}
+
+// Coba endpoint alternatif
+async function tryAlternativeSearch(barcode) {
+    try {
+        // Coba search biasa
+        const response = await fetch(`/api/search?q=${encodeURIComponent(barcode)}`);
+        const data = await response.json();
+        
+        if (Array.isArray(data) && data.length > 0) {
+            displayProductResult(data[0]);
+            saveRecentScan(barcode, data[0].Name_product);
+        } else {
+            showResultError('Produk tidak ditemukan: ' + barcode);
+        }
+    } catch (error) {
+        showResultError('Produk SKU ' + barcode + ' tidak ditemukan');
+    }
+}
+
 // Tampilkan hasil produk
 function displayProductResult(product) {
     const resultDiv = document.getElementById('scanResult');
     const productDiv = document.getElementById('productInfo');
+    
+    // Escape quotes untuk JavaScript
+    const safeName = (product.Name_product || product.name || '').replace(/'/g, "\\'").replace(/"/g, '\\"');
     
     resultDiv.innerHTML = `
         <div class="alert alert-success">
@@ -347,7 +327,7 @@ function displayProductResult(product) {
                 <i class="bi bi-check-circle-fill fs-4 me-3"></i>
                 <div>
                     <h6 class="mb-1">Barcode ditemukan!</h6>
-                    <p class="mb-0">Kode: <strong>${product.barcode || product.no_SKU}</strong></p>
+                    <p class="mb-0">SKU: <strong>${product.no_SKU || product.sku}</strong></p>
                 </div>
             </div>
         </div>
@@ -365,7 +345,7 @@ function displayProductResult(product) {
                     <strong>Tipe:</strong> <span class="badge ${product.type === 'lelang' ? 'bg-warning' : 'bg-info'}">${product.type || 'biasa'}</span>
                 </p>
                 <div class="d-grid gap-2">
-                    <button class="btn btn-primary" onclick="addToCartFromScanner('${product.no_SKU || product.sku}', '${product.Name_product || product.name}', ${product.Price || product.price}, '${product.type || 'biasa'}')">
+                    <button class="btn btn-primary" onclick="addToCartFromScanner('${product.no_SKU || product.sku}', '${safeName}', ${product.Price || product.price}, '${product.type || 'biasa'}')">
                         <i class="bi bi-cart-plus"></i> Tambah ke Keranjang
                     </button>
                     <button class="btn btn-outline-secondary" onclick="scanAnother()">
@@ -380,63 +360,49 @@ function displayProductResult(product) {
     productDiv.scrollIntoView({ behavior: 'smooth' });
 }
 
-// Tambah ke cart dari scanner
+// Tambah ke cart dari scanner (SIMPLE VERSION)
 function addToCartFromScanner(sku, name, price, type) {
     try {
-        console.log('Adding to cart from scanner:', { sku, name, price, type });
-        
-        // Simpan ke localStorage sebagai fallback
-        const cartItem = {
-            sku: sku,
-            name: name,
-            price: parseFloat(price),
-            qty: 1,
-            subtotal: parseFloat(price),
-            mode: type,
-            timestamp: new Date().getTime()
-        };
-        
         // Ambil cart dari localStorage
         let cart = JSON.parse(localStorage.getItem('cartItems') || '[]');
         
         // Cek apakah item sudah ada
-        const existingItemIndex = cart.findIndex(item => 
+        const existingItem = cart.find(item => 
             String(item.sku) === String(sku) && item.mode === type
         );
         
-        if (existingItemIndex > -1) {
-            // Update quantity jika sudah ada
-            cart[existingItemIndex].qty += 1;
-            cart[existingItemIndex].subtotal = cart[existingItemIndex].qty * cart[existingItemIndex].price;
+        if (existingItem) {
+            existingItem.qty += 1;
+            existingItem.subtotal = existingItem.qty * existingItem.price;
         } else {
-            // Tambah baru
-            cart.push(cartItem);
+            cart.push({
+                sku: sku,
+                name: name,
+                price: parseFloat(price),
+                qty: 1,
+                subtotal: parseFloat(price),
+                mode: type
+            });
         }
         
-        // Simpan kembali ke localStorage
+        // Simpan kembali
         localStorage.setItem('cartItems', JSON.stringify(cart));
         
         // Tampilkan notifikasi
         alert(`✅ ${name} berhasil ditambahkan ke keranjang!`);
         
-        // Jika di halaman kasir, refresh cart display
-        if (window.opener && typeof window.opener.updateCartDisplay === 'function') {
-            window.opener.updateCartDisplay();
+        // Tawarkan buka kasir
+        if (confirm('Buka halaman kasir sekarang?')) {
+            window.location.href = '/kasir';
         }
         
-        // Auto-close setelah 2 detik
-        setTimeout(() => {
-            const modal = bootstrap.Modal.getInstance(document.getElementById('productModal'));
-            if (modal) modal.hide();
-        }, 2000);
-        
     } catch (error) {
-        console.error('Error adding to cart from scanner:', error);
-        alert('❌ Gagal menambahkan ke keranjang: ' + error.message);
+        console.error('Error adding to cart:', error);
+        alert('❌ Gagal menambahkan ke keranjang');
     }
 }
 
-// Scan lagi lagi
+// Scan lagi
 function scanAnother() {
     document.getElementById('scanResult').innerHTML = `
         <div class="text-center text-muted py-4">
@@ -446,11 +412,6 @@ function scanAnother() {
     `;
     
     document.getElementById('productInfo').style.display = 'none';
-    
-    // Mulai auto-scan lagi
-    if (document.getElementById('autoModeSwitch').checked) {
-        startAutoScan();
-    }
 }
 
 // Tampilkan error
@@ -463,6 +424,79 @@ function showResultError(message) {
     `;
 }
 
+// Simpan scan terakhir
+function saveRecentScan(barcode, productName) {
+    try {
+        let recentScans = JSON.parse(localStorage.getItem('recentScans') || '[]');
+        
+        // Tambah ke awal
+        recentScans.unshift({
+            barcode: barcode,
+            productName: productName,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Maksimal 5 item
+        recentScans = recentScans.slice(0, 5);
+        
+        localStorage.setItem('recentScans', JSON.stringify(recentScans));
+        
+        // Update tampilan
+        updateRecentScans();
+        
+    } catch (error) {
+        console.error('Error saving recent scan:', error);
+    }
+}
+
+// Update daftar scan terakhir
+function updateRecentScans() {
+    try {
+        const recentScans = JSON.parse(localStorage.getItem('recentScans') || '[]');
+        const container = document.getElementById('recentScans');
+        
+        if (recentScans.length === 0) {
+            container.innerHTML = '<div class="text-muted">Belum ada scan</div>';
+            return;
+        }
+        
+        let html = '';
+        recentScans.forEach((scan, index) => {
+            const timeAgo = getTimeAgo(new Date(scan.timestamp));
+            html += `
+                <div class="d-flex justify-content-between border-bottom py-2">
+                    <div>
+                        <small class="d-block">${scan.productName || 'Unknown'}</small>
+                        <small class="text-muted">${scan.barcode}</small>
+                    </div>
+                    <small class="text-muted">${timeAgo}</small>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Error updating recent scans:', error);
+    }
+}
+
+// Helper: format waktu
+function getTimeAgo(date) {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'baru saja';
+    if (diffMins < 60) return `${diffMins}m`;
+    
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}j`;
+    
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}h`;
+}
+
 // Loading helper
 function showLoading(message = 'Memproses...') {
     document.getElementById('loadingSpinner').style.display = 'block';
@@ -472,69 +506,37 @@ function hideLoading() {
     document.getElementById('loadingSpinner').style.display = 'none';
 }
 
-// Event listener untuk auto-mode switch
-document.getElementById('autoModeSwitch').addEventListener('change', function() {
-    if (this.checked && videoStream && !scanInterval) {
-        startAutoScan();
-    } else if (!this.checked && scanInterval) {
-        clearInterval(scanInterval);
-        scanInterval = null;
-    }
-});
-
-// Load kamera saat halaman siap
+// Initialize
 document.addEventListener('DOMContentLoaded', function() {
-    loadCameras();
+    // Set default ke HTML5 scanner
+    document.getElementById('scannerType').value = 'html5';
+    changeScannerType();
     
-    // Auto-focus ke input manual
-    document.getElementById('manualBarcode').focus();
+    // Load recent scans
+    updateRecentScans();
     
     // Cleanup saat halaman ditutup
-    window.addEventListener('beforeunload', stopScanner);
+    window.addEventListener('beforeunload', function() {
+        if (html5QrCode && html5QrCode.isScanning) {
+            html5QrCode.stop();
+        }
+    });
 });
 </script>
 
 <style>
-#scannerContainer {
-    position: relative;
-    height: 400px;
+#reader {
     background: #000;
+    border-radius: 8px;
 }
 
-#scannerVideo {
-    height: 100%;
-    object-fit: cover;
-    transform: scaleX(-1); /* Mirror untuk kamera depan */
-}
-
-.scanner-overlay {
-    position: absolute;
-    top: 20%;
-    left: 15%;
-    right: 15%;
-    bottom: 20%;
-    border: 2px solid rgba(0, 255, 0, 0.5);
-    pointer-events: none;
-}
-
-.scanner-guide {
-    position: absolute;
-    top: 50%;
-    left: 15%;
-    right: 15%;
-    height: 2px;
-    background: rgba(0, 255, 0, 0.5);
-    animation: scanLine 2s infinite linear;
-    pointer-events: none;
-}
-
-@keyframes scanLine {
-    0% { top: 20%; }
-    100% { top: 80%; }
+/* Scanner overlay styling */
+#reader video {
+    border-radius: 8px;
 }
 
 @media (max-width: 768px) {
-    #scannerContainer {
+    #reader {
         height: 300px;
     }
 }
